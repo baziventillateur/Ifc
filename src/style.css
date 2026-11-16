@@ -1,0 +1,374 @@
+:root {
+  --fond: #0f1318;
+  --panneau: rgba(22, 27, 34, 0.94);
+  --bord: #2a323d;
+  --texte: #e6ebf1;
+  --doux: #8f9aa8;
+  --accent: #ff8a1f;
+  --accent-texte: #1a1206;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--fond);
+  color: var(--texte);
+  font: 13px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+}
+
+.barre {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: calc(6px + env(safe-area-inset-top)) 8px 6px;
+  background: var(--panneau);
+  border-bottom: 1px solid var(--bord);
+  backdrop-filter: blur(8px);
+}
+
+.marque {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pastille {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+  flex: none;
+}
+
+.titre {
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.sous-titre {
+  color: var(--doux);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--bord);
+  background: #1b222b;
+  color: var(--texte);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn.principal {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-texte);
+  font-weight: 650;
+}
+
+.calques {
+  position: fixed;
+  top: calc(46px + env(safe-area-inset-top));
+  left: 8px;
+  z-index: 9;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: calc(100% - 16px);
+}
+
+.calque {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--bord);
+  background: var(--panneau);
+  color: var(--texte);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.calque::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.calque.masque {
+  color: var(--doux);
+}
+
+.calque.masque::before {
+  background: transparent;
+  border: 1px solid var(--doux);
+}
+
+.aide {
+  position: fixed;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 8;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--panneau);
+  border: 1px solid var(--bord);
+  color: var(--doux);
+  font-size: 12px;
+  text-align: center;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+.aide.cache {
+  opacity: 0;
+}
+
+.fiche {
+  position: fixed;
+  z-index: 11;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 46vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panneau);
+  border-top: 1px solid var(--bord);
+  border-radius: 12px 12px 0 0;
+  backdrop-filter: blur(8px);
+  transform: translateY(105%);
+  transition: transform 0.22s ease;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.fiche.ouverte {
+  transform: translateY(0);
+}
+
+.fiche-entete {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px 7px;
+  border-bottom: 1px solid var(--bord);
+}
+
+.fiche-categorie {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fiche-nom {
+  font-size: 14px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.fermer {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--doux);
+  font-size: 15px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.fiche-corps {
+  overflow-y: auto;
+  padding: 4px 10px 10px;
+}
+
+.groupe {
+  margin-top: 8px;
+}
+
+.groupe-titre {
+  color: var(--doux);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.ligne {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ligne .cle {
+  color: var(--doux);
+  flex: none;
+  max-width: 50%;
+  overflow-wrap: anywhere;
+}
+
+.ligne .valeur {
+  text-align: right;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.vide {
+  color: var(--doux);
+  padding: 6px 0;
+}
+
+.voile {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 19, 24, 0.82);
+}
+
+.voile.cache,
+.depot {
+  display: none;
+}
+
+.voile-boite {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.roue {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid var(--bord);
+  border-top-color: var(--accent);
+  animation: tourne 0.8s linear infinite;
+}
+
+.jauge {
+  width: 180px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bord);
+  overflow: hidden;
+}
+
+.jauge-plein {
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+.depot.actif {
+  position: fixed;
+  inset: 8px;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: rgba(15, 19, 24, 0.85);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+@keyframes tourne {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 420px) {
+  .sous-titre {
+    display: none;
+  }
+}
+
+@media (min-width: 820px) {
+  .fiche {
+    left: auto;
+    right: 10px;
+    top: 56px;
+    bottom: 10px;
+    width: 340px;
+    max-height: none;
+    border: 1px solid var(--bord);
+    border-radius: 10px;
+    transform: translateX(110%);
+  }
+
+  .fiche.ouverte {
+    transform: translateX(0);
+  }
+
+  .aide {
+    bottom: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fiche,
+  .aide,
+  .jauge-plein {
+    transition: none;
+  }
+
+  .roue {
+    animation-duration: 2s;
+  }
+}

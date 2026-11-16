@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1318" />
+    <title>Visionneuse IFC</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%273%27 fill=%27%23ff8a1f%27/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="scene"></div>
+
+    <header class="barre">
+      <div class="marque">
+        <span class="pastille"></span>
+        <span class="titre">Visionneuse IFC</span>
+        <span class="sous-titre" id="nom-maquette">Maquette d'exemple</span>
+      </div>
+      <div class="actions">
+        <button id="btn-ouvrir" class="btn principal" type="button">Ouvrir un IFC</button>
+        <button id="btn-exemple" class="btn" type="button">Exemple</button>
+        <button id="btn-recadrer" class="btn" type="button" title="Recadrer la vue">Recadrer</button>
+      </div>
+      <input id="fichier" type="file" accept=".ifc" hidden />
+    </header>
+
+    <div class="calques" id="calques"></div>
+
+    <div class="aide" id="aide">
+      Tournez avec un doigt, zoomez avec deux. Touchez un élément pour voir ses informations.
+    </div>
+
+    <aside class="fiche" id="fiche" aria-live="polite">
+      <div class="fiche-entete">
+        <div>
+          <div class="fiche-categorie" id="fiche-categorie"></div>
+          <div class="fiche-nom" id="fiche-nom"></div>
+        </div>
+        <button class="fermer" id="fiche-fermer" type="button" aria-label="Fermer">✕</button>
+      </div>
+      <div class="fiche-corps" id="fiche-corps"></div>
+    </aside>
+
+    <div class="voile" id="voile">
+      <div class="voile-boite">
+        <div class="roue"></div>
+        <div id="voile-texte">Chargement de la maquette…</div>
+        <div class="jauge"><div class="jauge-plein" id="jauge"></div></div>
+      </div>
+    </div>
+
+    <div class="depot" id="depot">Déposez votre fichier IFC ici</div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

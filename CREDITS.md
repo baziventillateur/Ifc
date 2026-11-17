@@ -8,6 +8,8 @@ l'usage commercial ; les textes complets sont dans le dossier `licences/`.
 | [That Open Engine](https://github.com/ThatOpen) (`@thatopen/components`, `components-front`, `fragments`) | Affichage 3D, sélection, format de maquette | MIT |
 | [web-ifc](https://github.com/ThatOpen/engine_web-ifc) | Lecture des fichiers IFC | MPL-2.0 |
 | [three.js](https://github.com/mrdoob/three.js) | Moteur 3D | MIT |
+| [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) | Contrôle précis des clashs (arbres de volumes) | MIT |
+| [JSZip](https://github.com/Stuk/jszip) | Lecture et écriture des fichiers BCF | MIT (au choix avec GPLv3 ; utilisé ici sous MIT) |
 
 ## Maquette d'exemple
 

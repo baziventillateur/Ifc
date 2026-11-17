@@ -10,12 +10,13 @@
   </head>
   <body>
     <div id="scene"></div>
+    <div class="etiquettes" id="etiquettes"></div>
 
     <header class="barre">
       <div class="marque">
         <span class="pastille"></span>
         <span class="titre">Visionneuse IFC</span>
-        <span class="sous-titre" id="nom-maquette">Maquette d'exemple</span>
+        <span class="sous-titre" id="nom-maquette"></span>
       </div>
       <div class="actions">
         <button id="btn-ajouter" class="btn principal" type="button" title="Ajouter une ou plusieurs maquettes IFC">+ Maquette</button>
@@ -25,17 +26,30 @@
       <input id="fichier" type="file" accept=".ifc" multiple hidden />
     </header>
 
-    <section class="calques" id="calques" hidden>
-      <button class="calques-entete" id="calques-entete" type="button" aria-expanded="true">
-        <span id="calques-titre">Maquettes</span>
-        <span class="chevron" aria-hidden="true">▾</span>
-      </button>
-      <div class="calques-liste" id="calques-liste"></div>
-      <div class="calques-pied" id="calques-pied">
-        <button class="lien" id="btn-tout-afficher" type="button">Tout afficher</button>
-        <button class="lien" id="btn-tout-retirer" type="button">Tout retirer</button>
-      </div>
-    </section>
+    <nav class="outils" id="outils" aria-label="Outils"></nav>
+
+    <div class="colonne">
+      <section class="calques" id="calques" hidden>
+        <button class="calques-entete" id="calques-entete" type="button" aria-expanded="true">
+          <span id="calques-titre">Maquettes</span>
+          <span class="chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="calques-liste" id="calques-liste"></div>
+        <div class="calques-pied" id="calques-pied">
+          <button class="lien bascule" id="btn-couleurs" type="button" aria-pressed="false" title="Une couleur par lot (structure, CVC, électricité…)">Couleurs par lot</button>
+          <button class="lien plusieurs" id="btn-tout-afficher" type="button">Tout afficher</button>
+          <button class="lien plusieurs" id="btn-tout-retirer" type="button">Tout retirer</button>
+        </div>
+      </section>
+
+      <section class="outil" id="outil" hidden aria-live="polite">
+        <div class="outil-entete">
+          <span id="outil-titre"></span>
+          <button class="fermer" id="outil-fermer" type="button" aria-label="Fermer l'outil">✕</button>
+        </div>
+        <div class="outil-corps" id="outil-corps"></div>
+      </section>
+    </div>
 
     <div class="aide" id="aide">
       Tournez avec un doigt, zoomez avec deux. Touchez un élément pour voir ses informations.

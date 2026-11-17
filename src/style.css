@@ -109,41 +109,138 @@ body {
   top: calc(46px + env(safe-area-inset-top));
   left: 8px;
   z-index: 9;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-width: calc(100% - 16px);
+  width: min(250px, calc(100% - 16px));
+  background: var(--panneau);
+  border: 1px solid var(--bord);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  overflow: hidden;
 }
 
-.calque {
-  display: inline-flex;
+.calques[hidden],
+.calques-pied[hidden] {
+  display: none;
+}
+
+.calques-entete {
+  appearance: none;
+  display: flex;
   align-items: center;
-  gap: 5px;
-  border: 1px solid var(--bord);
-  background: var(--panneau);
-  color: var(--texte);
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--doux);
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   padding: 5px 8px;
-  border-radius: 999px;
   cursor: pointer;
 }
 
-.calque::before {
-  content: "";
+.chevron {
+  transition: transform 0.15s;
+}
+
+.calques.replie .chevron {
+  transform: rotate(-90deg);
+}
+
+.calques.replie .calques-liste,
+.calques.replie .calques-pied {
+  display: none;
+}
+
+.calques-liste {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.calque {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 3px 0 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.calque-nom {
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--texte);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 5px 0;
+  cursor: pointer;
+}
+
+.calque-nom .texte {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.point {
+  flex: none;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--accent);
 }
 
-.calque.masque {
+.calque.masque .calque-nom {
   color: var(--doux);
 }
 
-.calque.masque::before {
+.calque.masque .point {
   background: transparent;
   border: 1px solid var(--doux);
+}
+
+.icone {
+  appearance: none;
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--doux);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.icone:hover,
+.lien:hover {
+  color: var(--texte);
+}
+
+.calques-pied {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 4px;
+  border-top: 1px solid var(--bord);
+}
+
+.lien {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--doux);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 4px;
+  cursor: pointer;
 }
 
 .aide {

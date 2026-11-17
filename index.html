@@ -18,14 +18,24 @@
         <span class="sous-titre" id="nom-maquette">Maquette d'exemple</span>
       </div>
       <div class="actions">
-        <button id="btn-ouvrir" class="btn principal" type="button">Ouvrir un IFC</button>
+        <button id="btn-ajouter" class="btn principal" type="button" title="Ajouter une ou plusieurs maquettes IFC">+ Maquette</button>
         <button id="btn-exemple" class="btn" type="button">Exemple</button>
         <button id="btn-recadrer" class="btn" type="button" title="Recadrer la vue">Recadrer</button>
       </div>
-      <input id="fichier" type="file" accept=".ifc" hidden />
+      <input id="fichier" type="file" accept=".ifc" multiple hidden />
     </header>
 
-    <div class="calques" id="calques"></div>
+    <section class="calques" id="calques" hidden>
+      <button class="calques-entete" id="calques-entete" type="button" aria-expanded="true">
+        <span id="calques-titre">Maquettes</span>
+        <span class="chevron" aria-hidden="true">▾</span>
+      </button>
+      <div class="calques-liste" id="calques-liste"></div>
+      <div class="calques-pied" id="calques-pied">
+        <button class="lien" id="btn-tout-afficher" type="button">Tout afficher</button>
+        <button class="lien" id="btn-tout-retirer" type="button">Tout retirer</button>
+      </div>
+    </section>
 
     <div class="aide" id="aide">
       Tournez avec un doigt, zoomez avec deux. Touchez un élément pour voir ses informations.
@@ -50,7 +60,7 @@
       </div>
     </div>
 
-    <div class="depot" id="depot">Déposez votre fichier IFC ici</div>
+    <div class="depot" id="depot">Déposez vos fichiers IFC ici</div>
 
     <script type="module" src="./src/main.ts"></script>
   </body>

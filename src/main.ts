@@ -21,6 +21,10 @@ const ficheCategorie = el("fiche-categorie");
 const ficheNom = el("fiche-nom");
 const ficheCorps = el("fiche-corps");
 const calques = el("calques");
+const calquesEntete = el("calques-entete");
+const calquesTitre = el("calques-titre");
+const calquesListe = el("calques-liste");
+const calquesPied = el("calques-pied");
 const aide = el("aide");
 const nomMaquette = el("nom-maquette");
 const champFichier = el<HTMLInputElement>("fichier");
@@ -67,7 +71,10 @@ fragments.list.onItemSet.add(({ value: modele }) => {
   dessinerCalques();
 });
 
-fragments.list.onItemDeleted.add(() => dessinerCalques());
+fragments.list.onItemDeleted.add(() => {
+  dessinerCalques();
+  majTitre();
+});
 
 // Évite le scintillement entre faces superposées.
 fragments.core.models.materials.list.onItemSet.add(({ value: materiau }) => {
@@ -227,27 +234,88 @@ async function afficherFiche(modele: any, idLocal: number, idModele: string) {
   fiche.classList.add("ouverte");
 }
 
-// --- Calques (une pastille par maquette chargée) --------------------------
+// --- Panneau des maquettes ---------------------------------------------------
+
+/** Vrai tant que la maquette d'exemple est affichée : elle cède la place au premier IFC ajouté. */
+let exempleAffiche = false;
+
+function majTitre() {
+  const n = fragments.list.size;
+  if (exempleAffiche) nomMaquette.textContent = "École (exemple)";
+  else if (n === 0) nomMaquette.textContent = "Aucune maquette";
+  else if (n === 1) nomMaquette.textContent = [...fragments.list.keys()][0];
+  else nomMaquette.textContent = `${n} maquettes`;
+}
+
+function bouton(classe: string, texte: string, titre: string, action: () => void) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = classe;
+  b.textContent = texte;
+  b.title = titre;
+  b.setAttribute("aria-label", titre);
+  b.addEventListener("click", action);
+  return b;
+}
+
+async function changerVisibilite(changements: [any, boolean][]) {
+  for (const [modele, visible] of changements) modele.object.visible = visible;
+  await surligneur.clear("select");
+  fermerFiche();
+  await fragments.core.update(true);
+  dessinerCalques();
+}
 
 function dessinerCalques() {
-  calques.replaceChildren();
-  if (fragments.list.size < 2) return;
-  for (const [id, modele] of fragments.list) {
-    const bouton = document.createElement("button");
-    bouton.type = "button";
-    bouton.className = "calque";
-    bouton.textContent = id;
-    bouton.classList.toggle("masque", !modele.object.visible);
-    bouton.addEventListener("click", () => {
-      modele.object.visible = !modele.object.visible;
-      bouton.classList.toggle("masque", !modele.object.visible);
-      void surligneur.clear("select");
-      fermerFiche();
-      fragments.core.update(true);
+  const modeles = [...fragments.list.entries()];
+  calques.hidden = modeles.length === 0;
+  calquesTitre.textContent = `Maquettes · ${modeles.length}`;
+  calquesListe.replaceChildren();
+  for (const [id, modele] of modeles) {
+    const ligneCalque = document.createElement("div");
+    ligneCalque.className = "calque";
+    ligneCalque.classList.toggle("masque", !modele.object.visible);
+
+    const nom = bouton("calque-nom", "", `Afficher / masquer « ${id} »`, () =>
+      void changerVisibilite([[modele, !modele.object.visible]]),
+    );
+    const point = document.createElement("span");
+    point.className = "point";
+    const texte = document.createElement("span");
+    texte.className = "texte";
+    texte.textContent = id;
+    nom.append(point, texte);
+
+    const isoler = bouton("icone", "◎", `Afficher seulement « ${id} »`, () =>
+      void changerVisibilite([...fragments.list.values()].map((m) => [m, m === modele])),
+    );
+    const retirerBtn = bouton("icone", "✕", `Retirer « ${id} »`, () => {
+      if (!exempleAffiche && !window.confirm(`Retirer la maquette « ${id} » ?`)) return;
+      void retirer(id);
     });
-    calques.append(bouton);
+
+    ligneCalque.append(nom);
+    if (modeles.length > 1) ligneCalque.append(isoler);
+    ligneCalque.append(retirerBtn);
+    calquesListe.append(ligneCalque);
   }
+  calquesPied.hidden = modeles.length < 2;
 }
+
+calquesEntete.addEventListener("click", () => {
+  const replie = calques.classList.toggle("replie");
+  calquesEntete.setAttribute("aria-expanded", String(!replie));
+});
+
+el("btn-tout-afficher").addEventListener("click", () =>
+  void changerVisibilite([...fragments.list.values()].map((m) => [m, true])),
+);
+
+el("btn-tout-retirer").addEventListener("click", async () => {
+  if (!exempleAffiche && !window.confirm("Retirer toutes les maquettes ?")) return;
+  await vider();
+  majTitre();
+});
 
 // --- Chargement -------------------------------------------------------------
 
@@ -257,14 +325,32 @@ async function vider() {
   for (const id of [...fragments.list.keys()]) {
     await fragments.core.disposeModel(id);
   }
+  // La prochaine maquette chargée redéfinit le repère commun.
+  fragments.core.baseCoordinates = null;
+  exempleAffiche = false;
+}
+
+async function retirer(id: string) {
+  await surligneur.clear("select");
+  fermerFiche();
+  await fragments.core.disposeModel(id);
+  if (fragments.list.size === 0) {
+    fragments.core.baseCoordinates = null;
+    exempleAffiche = false;
+  }
+  majTitre();
+  caleGrille();
+  await fragments.core.update(true);
 }
 
 async function recadrer() {
   await fragments.core.update(true);
+  const visibles = [...fragments.list.values()].filter((m) => m.object.visible);
+  if (visibles.length === 0) return;
+
   // Sur l'exemple, on cadre le bâtiment plutôt que le terrain autour.
-  const batiment = fragments.list.get("Structure");
-  const visible = [...fragments.list.values()].some((m) => m.object.visible);
-  if (batiment && batiment.object.visible && fragments.list.size > 1) {
+  const batiment = exempleAffiche ? fragments.list.get("Structure") : undefined;
+  if (batiment && batiment.object.visible) {
     const sphere = batiment.box.getBoundingSphere(new THREE.Sphere());
     if (sphere.radius > 0) {
       sphere.radius *= 0.8;
@@ -281,7 +367,19 @@ async function recadrer() {
       return;
     }
   }
-  if (visible) await monde.camera.fitToItems();
+
+  // Sinon, on cadre l'ensemble des maquettes visibles.
+  const boite = new THREE.Box3();
+  for (const modele of visibles) boite.union(modele.box);
+  if (boite.isEmpty()) return;
+  await monde.camera.controls.fitToSphere(boite.getBoundingSphere(new THREE.Sphere()), true);
+}
+
+/** Pose la grille sous le point le plus bas des maquettes, pour qu'elle ne traverse pas le bâtiment. */
+function caleGrille() {
+  const boite = new THREE.Box3();
+  for (const modele of fragments.list.values()) boite.union(modele.box);
+  grille.three.position.y = boite.isEmpty() ? 0 : boite.min.y - 0.02;
 }
 
 async function chargerExemple() {
@@ -299,7 +397,10 @@ async function chargerExemple() {
         attente("Chargement de la maquette d'exemple…", fait / MODELES_EXEMPLE.length);
       }),
     );
-    nomMaquette.textContent = "École (exemple)";
+    exempleAffiche = true;
+    majTitre();
+    dessinerCalques();
+    caleGrille();
     await recadrer();
     attente(null);
   } catch (erreur) {
@@ -309,29 +410,70 @@ async function chargerExemple() {
   }
 }
 
-async function chargerIfc(fichier: File) {
-  if (!/\.ifc$/i.test(fichier.name)) {
+function idUnique(nom: string) {
+  if (!fragments.list.has(nom)) return nom;
+  let i = 2;
+  while (fragments.list.has(`${nom} (${i})`)) i += 1;
+  return `${nom} (${i})`;
+}
+
+let chargementEnCours = false;
+
+/** Ajoute une ou plusieurs maquettes IFC à celles déjà affichées. */
+async function ajouterIfc(fichiers: File[]) {
+  if (chargementEnCours) return;
+  const ifc = fichiers.filter((f) => /\.ifc$/i.test(f.name));
+  if (ifc.length === 0) {
     alerte("Ce fichier n'est pas un IFC. Depuis Revit : Fichier → Exporter → IFC.");
     return;
   }
+
+  chargementEnCours = true;
+  const echecs: string[] = [];
   try {
-    attente("Lecture du fichier…", 0.02);
+    attente("Préparation…", 0.02);
     await preparerChargeurIfc();
-    const tampon = new Uint8Array(await fichier.arrayBuffer());
-    await vider();
-    const nom = fichier.name.replace(/\.ifc$/i, "");
-    await chargeurIfc.load(tampon, true, nom, {
-      processData: {
-        progressCallback: (avancement: number) => attente("Conversion de la maquette…", avancement),
-      },
-    });
-    nomMaquette.textContent = nom;
+    if (exempleAffiche) await vider();
+
+    // Une maquette après l'autre : moins de mémoire, surtout sur téléphone.
+    for (const [rang, fichier] of ifc.entries()) {
+      const nom = fichier.name.replace(/\.ifc$/i, "");
+      const etape = ifc.length > 1 ? `${rang + 1}/${ifc.length} · ` : "";
+      try {
+        attente(`${etape}Lecture de « ${nom} »…`, 0.02);
+        const tampon = new Uint8Array(await fichier.arrayBuffer());
+        await chargeurIfc.load(tampon, true, idUnique(nom), {
+          processData: {
+            progressCallback: (avancement: number) =>
+              attente(`${etape}Conversion de « ${nom} »…`, avancement),
+          },
+        });
+      } catch (erreur) {
+        console.error(erreur);
+        echecs.push(fichier.name);
+      }
+    }
+
+    majTitre();
+    caleGrille();
     await recadrer();
-    attente(null);
   } catch (erreur) {
     console.error(erreur);
+    chargeurPret = null;
+    echecs.splice(0, echecs.length, ...ifc.map((f) => f.name));
+  } finally {
+    chargementEnCours = false;
     attente(null);
-    alerte("Ce fichier IFC n'a pas pu être lu. Vérifiez qu'il n'est pas corrompu.");
+  }
+
+  if (echecs.length > 0) {
+    alerte(
+      echecs.length === 1
+        ? `« ${echecs[0]} » n'a pas pu être lu. Vérifiez qu'il n'est pas corrompu.`
+        : `${echecs.length} fichiers n'ont pas pu être lus.`,
+    );
+  } else if (ifc.length < fichiers.length) {
+    alerte("Seuls les fichiers .ifc ont été ajoutés.");
   }
 }
 
@@ -345,14 +487,17 @@ function alerte(texte: string) {
 
 // --- Commandes ---------------------------------------------------------------
 
-el("btn-ouvrir").addEventListener("click", () => champFichier.click());
-el("btn-exemple").addEventListener("click", () => void chargerExemple());
+el("btn-ajouter").addEventListener("click", () => champFichier.click());
+el("btn-exemple").addEventListener("click", () => {
+  if (!exempleAffiche && fragments.list.size > 0 && !window.confirm("Remplacer vos maquettes par l'exemple ?")) return;
+  void chargerExemple();
+});
 el("btn-recadrer").addEventListener("click", () => void recadrer());
 
 champFichier.addEventListener("change", () => {
-  const fichier = champFichier.files?.[0];
+  const fichiers = [...(champFichier.files ?? [])];
   champFichier.value = "";
-  if (fichier) void chargerIfc(fichier);
+  if (fichiers.length > 0) void ajouterIfc(fichiers);
 });
 
 window.addEventListener("dragover", (e) => {
@@ -365,8 +510,8 @@ window.addEventListener("dragleave", (e) => {
 window.addEventListener("drop", (e) => {
   e.preventDefault();
   depot.classList.remove("actif");
-  const fichier = e.dataTransfer?.files?.[0];
-  if (fichier) void chargerIfc(fichier);
+  const fichiers = [...(e.dataTransfer?.files ?? [])];
+  if (fichiers.length > 0) void ajouterIfc(fichiers);
 });
 
 window.setTimeout(() => aide.classList.add("cache"), 9000);

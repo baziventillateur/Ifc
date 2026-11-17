@@ -6,12 +6,16 @@ ordinateur comme sur téléphone. Rien à installer.
 ## Ce qu'elle fait
 
 - Une **maquette d'exemple** (une école : architecture + structure) se charge à l'ouverture.
-- **Ouvrir un IFC** : choisir un fichier `.ifc`, ou le glisser sur la page.
-  Le fichier est lu dans le navigateur et n'est envoyé sur aucun serveur.
-- **Toucher un élément** affiche sa fiche : type d'ouvrage, nom, repère,
-  volume mesuré, jeux de propriétés et quantités.
-- Les pastilles **Structure / Architecture** masquent ou affichent chaque maquette.
-- **Recadrer** recentre la vue.
+- **+ Maquette** : ajouter un ou plusieurs fichiers `.ifc` (sélection multiple,
+  ou glisser-déposer sur la page). Les maquettes s'ajoutent les unes aux autres
+  et se superposent dans le repère du projet (structure, CVC, plomberie…).
+  Les fichiers sont lus dans le navigateur et ne sont envoyés sur aucun serveur.
+- Le panneau **Maquettes** liste les maquettes chargées :
+  toucher un nom l'affiche ou la masque, ◎ n'affiche qu'elle, ✕ la retire.
+  *Tout afficher* et *Tout retirer* agissent sur l'ensemble. Le titre du panneau le replie.
+- **Toucher un élément** affiche sa fiche : maquette d'origine, type d'ouvrage,
+  nom, repère, volume mesuré, jeux de propriétés et quantités.
+- **Recadrer** recentre la vue sur les maquettes visibles.
 
 Depuis Revit, exporter la maquette avec *Fichier → Exporter → IFC* : le format
 `.rvt` n'est pas lisible directement.

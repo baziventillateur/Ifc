@@ -1580,3 +1580,16 @@ body.selection-active .bandeau {
   font-weight: 600;
   color: var(--texte);
 }
+
+.signature {
+  align-self: center;
+  margin-top: 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--doux);
+  text-decoration: none;
+}
+
+.signature:hover {
+  color: var(--texte);
+}

@@ -443,7 +443,11 @@ function ouvrirPanneau(info = "") {
   }
   if (etat.admin) pied.append(bouton("btn", "Panneau admin", () => void ouvrirAdmin()));
   pied.append(bouton("btn", "Se déconnecter", () => void seDeconnecter()));
-  corps.append(pied);
+  const signature = cree("a", "signature", "NexBim · une application PaceApp");
+  signature.href = "https://paceapp.fr";
+  signature.target = "_blank";
+  signature.rel = "noopener";
+  corps.append(pied, signature);
 }
 
 btnProjet.addEventListener("click", () => ouvrirPanneau());

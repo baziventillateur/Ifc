@@ -91,6 +91,11 @@ function afficher(mode: Mode, info = "", avecPrenom = false) {
     lien("J'ai déjà un compte", "connexion");
   }
   boite.append(liens);
+  const signature = cree("a", "signature", "Une application PaceApp");
+  signature.href = "https://paceapp.fr";
+  signature.target = "_blank";
+  signature.rel = "noopener";
+  boite.append(signature);
 
   boite.addEventListener("submit", async (e) => {
     e.preventDefault();

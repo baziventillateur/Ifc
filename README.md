@@ -1,5 +1,7 @@
 # NexBim
 
+*Une application PaceApp.*
+
 Visionneuse de maquettes 3D au format IFC, utilisable dans un navigateur, sur
 ordinateur comme sur téléphone. Rien à installer.
 

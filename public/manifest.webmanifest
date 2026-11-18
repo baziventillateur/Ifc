@@ -5,7 +5,7 @@
   "display": "standalone",
   "name": "NexBim",
   "short_name": "NexBim",
-  "description": "Visionneuse de maquettes IFC : superposition, coupes, mesures, quantités, clashs et remarques BCF.",
+  "description": "Visionneuse de maquettes IFC : superposition, coupes, mesures, quantités, clashs et remarques BCF. Une application PaceApp.",
   "lang": "fr",
   "background_color": "#0f1318",
   "theme_color": "#0f1318",

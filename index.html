@@ -6,7 +6,11 @@
     <meta name="theme-color" content="#0f1318" />
     <title>Visionneuse IFC</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%273%27 fill=%27%23ff8a1f%27/%3E%3C/svg%3E" />
+    <link rel="manifest" href="manifest.webmanifest" />
     <link rel="stylesheet" href="./src/style.css" />
+    <script>
+      if('serviceWorker' in navigator) addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+    </script>
   </head>
   <body>
     <div id="scene"></div>

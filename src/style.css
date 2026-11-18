@@ -1498,3 +1498,85 @@ body.outil-ouvert .bandeau {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* --- Sélection multiple et masquage ---------------------------------------------- */
+.barre-selection {
+  position: fixed;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100vw - 12px);
+  padding: 4px 5px 4px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow-x: auto;
+  background: var(--panneau-plein);
+  border: 1px solid var(--bord);
+  border-radius: 8px;
+}
+
+.barre-selection[hidden],
+.cadre-selection[hidden] {
+  display: none;
+}
+
+.barre-selection .compte {
+  margin-right: 3px;
+  color: var(--doux);
+}
+
+body.selection-active .bandeau {
+  display: none;
+}
+
+.cadre-selection {
+  position: fixed;
+  z-index: 30;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  background: rgba(255, 138, 31, 0.12);
+}
+
+.rang-masque {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.rang-masque span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 819px) {
+  body.outil-ouvert .barre-selection {
+    display: none;
+  }
+}
+
+.logo {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+.porte-marque .logo {
+  width: 22px;
+  height: 22px;
+}
+
+.porte-marque {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--texte);
+}

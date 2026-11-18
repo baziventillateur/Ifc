@@ -3,7 +3,15 @@ import * as THREE from "three";
 import type * as FRAGS from "@thatopen/fragments";
 import { ajusterDecalage, bouton, cadrer, cree, el, lanceur, monde, nombre, Signal } from "./noyau";
 import { maquettes } from "./registre";
-import { definirIsolement, idsDe, isolementActif, selectionner } from "./apparence";
+import {
+  basculerSelection,
+  definirIsolement,
+  idsDe,
+  isolementActif,
+  masquer,
+  nombreSelection,
+  selectionner,
+} from "./apparence";
 import { libelleAttribut, libelleCategorie, formaterValeur } from "./libelles";
 import { AVEC_PROPRIETES, lireJeux } from "./index-elements";
 import { demandeRemarque } from "./evenements";
@@ -80,8 +88,21 @@ canvas.addEventListener("pointerup", (e) => {
   void toucher(e);
 });
 
+let multiple = false;
+/** Mode « sélection multiple » : chaque toucher ajoute ou retire un élément. */
+export function definirSelectionMultiple(actif: boolean) {
+  multiple = actif;
+}
+export const selectionMultiple = () => multiple;
+
 async function toucher(e: PointerEvent) {
   const v = await viser(e);
+  if (multiple || e.ctrlKey || e.metaKey) {
+    if (!v) return;
+    await fermerFiche(true);
+    await basculerSelection(v.modele, v.id);
+    return;
+  }
   if (!v) {
     await fermerFiche();
     return;
@@ -95,15 +116,14 @@ let courant: { modele: string; id: number } | null = null;
 
 el("fiche-fermer").addEventListener("click", () => void fermerFiche());
 
-export async function fermerFiche() {
+export async function fermerFiche(garderSelection = false) {
   const etaitOuverte = fiche.classList.contains("ouverte");
   fiche.classList.remove("ouverte");
   if (etaitOuverte) ajusterDecalage();
-  if (courant) {
-    courant = null;
-    await selectionner(null);
-    selectionChangee.emit(null);
-  }
+  const avait = courant !== null;
+  courant = null;
+  if (!garderSelection && (avait || nombreSelection() > 0)) await selectionner(null);
+  if (avait) selectionChangee.emit(null);
 }
 
 function ligne(cle: string, contenu: string) {
@@ -145,6 +165,10 @@ export async function montrerElement(idModele: string, idLocal: number, centrer 
     bouton("puce", isolementActif() ? "Tout réafficher" : "Isoler", async () => {
       await definirIsolement(isolementActif() ? null : idsDe(idModele, idLocal));
       if (courant) await montrerElement(courant.modele, courant.id, false);
+    }),
+    bouton("puce", "Masquer", async () => {
+      await fermerFiche();
+      await masquer(idsDe(idModele, idLocal));
     }),
     bouton("puce", "+ Remarque", () =>
       demandeRemarque.emit({ titre: nom, elements: [{ modele: idModele, id: idLocal }] }),

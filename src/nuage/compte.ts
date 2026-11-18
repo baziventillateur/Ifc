@@ -42,7 +42,10 @@ function afficher(mode: Mode, info = "", avecPrenom = false) {
   porte.hidden = false;
   const boite = cree("form", "porte-boite");
   const marque = cree("div", "porte-marque");
-  marque.append(cree("span", "pastille"), cree("span", "", "Visionneuse IFC"));
+  const logo = cree("img", "logo");
+  logo.src = "logo.svg";
+  logo.alt = "";
+  marque.append(logo, cree("span", "", "NexBim"));
   const titres: Record<Mode, string> = {
     connexion: "Connexion",
     inscription: "Créer un compte",

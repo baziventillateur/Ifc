@@ -1,0 +1,5 @@
+# Projet Supabase NexBim (région eu-west-3) lié à ce dépôt.
+project_id = "gmirbodifgxxnsfyfuyr"
+
+[db]
+major_version = 17

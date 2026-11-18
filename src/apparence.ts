@@ -51,10 +51,104 @@ function styleBase(m: Maquette): MaterialDefinition | undefined {
   return undefined;
 }
 
+// --- Couleurs et opacités choisies à la main, élément par élément ------------------
+
+/** Teinte d'un élément ; sans couleur, il garde celle de sa maquette. */
+export type Teinte = { hex?: string; opacite: number };
+const perso = new Map<string, Map<number, Teinte>>();
+const CLE_PERSO = "nexbim-apparences";
+const GRIS = "#c9ced6";
+const stylesPerso = new Map<string, MaterialDefinition>();
+/** Émis quand des couleurs ou opacités d'éléments changent. */
+export const persoModifiee = new Signal();
+
+function stylePerso(t: Teinte, m: Maquette) {
+  const hex = t.hex ?? (reglages.couleurs ? m.hex : GRIS);
+  const cle = `${hex}|${t.opacite}`;
+  let st = stylesPerso.get(cle);
+  if (!st) {
+    st = style(hex, t.opacite);
+    stylesPerso.set(cle, st);
+  }
+  return st;
+}
+
+try {
+  const brut = JSON.parse(localStorage.getItem(CLE_PERSO) ?? "{}") as Record<string, Record<string, number[]>>;
+  for (const [mid, groupes] of Object.entries(brut)) {
+    const carte = new Map<number, Teinte>();
+    for (const [cle, ids] of Object.entries(groupes)) {
+      const [hex, op] = cle.split("|");
+      for (const id of ids) carte.set(id, { hex: hex || undefined, opacite: Number(op) || 1 });
+    }
+    perso.set(mid, carte);
+  }
+} catch {
+  // Mémoire locale illisible : on repart sans couleurs personnalisées.
+}
+
+function sauverPerso() {
+  const brut: Record<string, Record<string, number[]>> = {};
+  for (const [mid, carte] of perso) {
+    if (!carte.size) continue;
+    const groupes: Record<string, number[]> = {};
+    for (const [id, t] of carte) (groupes[`${t.hex ?? ""}|${t.opacite}`] ??= []).push(id);
+    brut[mid] = groupes;
+  }
+  try {
+    localStorage.setItem(CLE_PERSO, JSON.stringify(brut));
+  } catch {
+    // Gardé pour la session seulement.
+  }
+}
+
+/** Change la couleur et/ou l'opacité d'éléments ; null leur rend leur apparence d'origine. */
+export function definirTeinte(ids: Ids, changement: Partial<Teinte> | null) {
+  for (const [mid, liste] of ids) {
+    let carte = perso.get(mid);
+    if (!carte) {
+      carte = new Map();
+      perso.set(mid, carte);
+    }
+    for (const id of liste) {
+      const t: Teinte | null = changement ? { opacite: 1, ...carte.get(id), ...changement } : null;
+      if (!t || (t.hex === undefined && t.opacite >= 1)) carte.delete(id);
+      else carte.set(id, t);
+    }
+  }
+  sauverPerso();
+  persoModifiee.emit();
+  return appliquerApparence([...ids.keys()]);
+}
+
+/** Teinte du premier élément personnalisé parmi ceux donnés. */
+export function teinteDe(ids: Ids): Teinte | null {
+  for (const [mid, liste] of ids) for (const id of liste) {
+    const t = perso.get(mid)?.get(id);
+    if (t) return t;
+  }
+  return null;
+}
+
+export const nombrePerso = () => [...perso.values()].reduce((n, c) => n + c.size, 0);
+
+/** Rend leur apparence d'origine à tous les éléments recolorés. */
+export function effacerPerso() {
+  const touchees = [...perso.keys()];
+  perso.clear();
+  sauverPerso();
+  persoModifiee.emit();
+  return appliquerApparence(touchees);
+}
+
 function styleDe(m: Maquette, id: number) {
   if (selection.get(m.id)?.has(id)) return STYLES.selection;
   for (let i = couches.length - 1; i >= 0; i--) {
     if (couches[i].ids.get(m.id)?.has(id)) return couches[i].style;
+  }
+  if (!focusActif()) {
+    const t = perso.get(m.id)?.get(id);
+    if (t) return stylePerso(t, m);
   }
   return styleBase(m);
 }
@@ -71,6 +165,16 @@ async function appliquerModele(m: Maquette) {
   await modele.resetHighlight();
   const base = styleBase(m);
   if (base) await modele.highlight(undefined, base);
+  const carte = perso.get(m.id);
+  if (carte?.size && !focusActif()) {
+    const parStyle = new Map<MaterialDefinition, number[]>();
+    for (const [id, t] of carte) {
+      const st = stylePerso(t, m);
+      if (!parStyle.has(st)) parStyle.set(st, []);
+      parStyle.get(st)!.push(id);
+    }
+    for (const [st, liste] of parStyle) await modele.highlight(liste, st);
+  }
   for (const c of couches) {
     const ids = c.ids.get(m.id);
     if (ids && ids.size) await modele.highlight([...ids], c.style);

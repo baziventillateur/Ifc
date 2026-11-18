@@ -20,7 +20,7 @@ import {
   type Ids,
 } from "./apparence";
 import { definirSelectionMultiple, elementCourant, fermerFiche, selectionMultiple } from "./fiche";
-import { demandeRemarque } from "./evenements";
+import { demandeMenu, demandeRemarque } from "./evenements";
 import { indexDeTout } from "./index-elements";
 import { libelleCategorie } from "./libelles";
 import { enregistrerOutil, marquerOutil } from "./outils/panneau";
@@ -77,6 +77,15 @@ function dessiner() {
       cree("span", "compte", pluriel(n, "élément")),
       bouton("puce", "Masquer", () => void masquerSelection(), "Masquer la sélection (H ou Suppr)"),
       bouton("puce", isolementActif() ? "Tout voir" : "Isoler", () => void isolerSelection(), "Isoler la sélection (I)"),
+      bouton(
+        "puce",
+        "Couleur",
+        () => {
+          const r = barre.getBoundingClientRect();
+          demandeMenu.emit({ ids: selectionIds(), x: r.left, y: r.top - 190 });
+        },
+        "Couleur et opacité de la sélection (ou clic droit sur la maquette)",
+      ),
       bouton("puce", "+ Remarque", remarqueSurSelection),
       bouton("puce", "✕", () => void definirSelection(new Map()), "Désélectionner (Échap)"),
     );
@@ -208,7 +217,7 @@ enregistrerOutil("selection", "Sélection", "Sélection multiple et éléments m
     actions,
     titreSection("Éléments masqués"),
     liste,
-    note("Clavier : Ctrl+clic ajoute · Maj+glisser encadre · H ou Suppr masque · I isole · Maj+H réaffiche tout · Échap désélectionne."),
+    note("Clavier : Ctrl+clic ajoute · Maj+glisser encadre · clic droit : couleur et opacité · H ou Suppr masque · I isole · Maj+H réaffiche tout · Échap désélectionne."),
   );
 
   let ouvert = false;

@@ -14,7 +14,7 @@ import {
 } from "./apparence";
 import { libelleAttribut, libelleCategorie, formaterValeur } from "./libelles";
 import { AVEC_PROPRIETES, lireJeux } from "./index-elements";
-import { demandeRemarque } from "./evenements";
+import { demandeMenu, demandeRemarque } from "./evenements";
 
 type Donnees = Record<string, any>;
 export type Visee = { modele: string; id: number; point: THREE.Vector3 } | null;
@@ -80,6 +80,8 @@ canvas.addEventListener("pointerup", (e) => {
   doigts = Math.max(0, doigts - 1);
   const d = depart;
   depart = null;
+  // Le clic droit ouvre le menu d'apparence (menu-selection.ts), pas la fiche.
+  if (e.pointerType === "mouse" && e.button !== 0) return;
   if (!d || d.n > 1 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return;
   if (modeClic) {
     void modeClic(e);
@@ -169,6 +171,10 @@ export async function montrerElement(idModele: string, idLocal: number, centrer 
     bouton("puce", "Masquer", async () => {
       await fermerFiche();
       await masquer(idsDe(idModele, idLocal));
+    }),
+    bouton("puce", "Couleur", (ev?: Event) => {
+      const r = (ev?.currentTarget as HTMLElement | undefined)?.getBoundingClientRect();
+      demandeMenu.emit({ ids: idsDe(idModele, idLocal), x: r?.left ?? 40, y: (r?.bottom ?? 80) + 4 });
     }),
     bouton("puce", "+ Remarque", () =>
       demandeRemarque.emit({ titre: nom, elements: [{ modele: idModele, id: idLocal }] }),

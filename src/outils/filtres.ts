@@ -2,7 +2,15 @@
 import { bouton, cree, nombre } from "../noyau";
 import { changement, maquettes } from "../registre";
 import { indexDeTout, SANS_NIVEAU } from "../index-elements";
-import { definirFiltre, filtreActif, type Ids } from "../apparence";
+import {
+  definirFiltre,
+  definirSelection,
+  filtreActif,
+  selectionIds,
+  selectionModifiee,
+  type Ids,
+} from "../apparence";
+import { fermerFiche } from "../fiche";
 import { libelleCategorie } from "../libelles";
 import { enregistrerOutil, marquerOutil } from "./panneau";
 import { note, titreSection } from "./ui";
@@ -68,25 +76,70 @@ enregistrerOutil("filtres", "Filtres", "Filtrer par niveau et par type", (sectio
     }),
   );
 
-  const caseA = (libelle: string, compte: number, masques: Set<string>) => {
-    const l = cree("label", "case");
+  // Éléments de chaque ligne, pour les sélectionner d'un clic sur le nom.
+  const idsNiveaux = new Map<string, Ids>();
+  const idsTypes = new Map<string, Ids>();
+  const noter = (carte: Map<string, Ids>, cle: string, mid: string, id: number) => {
+    let ids = carte.get(cle);
+    if (!ids) carte.set(cle, (ids = new Map()));
+    let s = ids.get(mid);
+    if (!s) ids.set(mid, (s = new Set()));
+    s.add(id);
+  };
+
+  const effacerChoix = () => {
+    for (const x of section.querySelectorAll(".case.choisie")) x.classList.remove("choisie");
+  };
+  // Une sélection faite ailleurs efface le repère des lignes choisies.
+  let interne = false;
+  selectionModifiee.on(() => {
+    if (!interne) effacerChoix();
+  });
+
+  async function choisir(ligne: HTMLElement, ids: Ids | undefined, ajouter: boolean) {
+    if (!ids) return;
+    const suivante: Ids = ajouter ? selectionIds() : new Map();
+    for (const [mid, liste] of ids) {
+      const s = suivante.get(mid) ?? new Set<number>();
+      for (const id of liste) s.add(id);
+      suivante.set(mid, s);
+    }
+    interne = true;
+    try {
+      await fermerFiche(true);
+      await definirSelection(suivante);
+    } finally {
+      interne = false;
+    }
+    if (!ajouter) effacerChoix();
+    ligne.classList.add("choisie");
+  }
+
+  const caseA = (libelle: string, compte: number, masques: Set<string>, carte: Map<string, Ids>) => {
+    const l = cree("div", "case");
     const i = cree("input");
     i.type = "checkbox";
     i.checked = !masques.has(libelle);
+    i.title = "Afficher / masquer";
     i.addEventListener("change", () => {
       if (i.checked) masques.delete(libelle);
       else masques.add(libelle);
       planifier();
     });
-    l.append(i, cree("span", "case-texte", libelle), cree("span", "compte", nombre(compte, 0)));
-    // Toucher longuement le nom : n'afficher que celui-ci.
-    l.addEventListener("dblclick", (e) => {
+    const nom = cree("span", "case-nom");
+    nom.title = "Sélectionner ces éléments (Ctrl : ajouter) · double-clic : n'afficher qu'eux";
+    nom.append(cree("span", "case-texte", libelle), cree("span", "compte", nombre(compte, 0)));
+    nom.addEventListener("click", (e) => void choisir(l, carte.get(libelle), e.ctrlKey || e.metaKey || e.shiftKey));
+    // Double-clic sur le nom : n'afficher que celui-ci.
+    nom.addEventListener("dblclick", (e) => {
       e.preventDefault();
       for (const x of masques === masquesNiveaux ? niveauxConnus : typesConnus) masques.add(x);
       masques.delete(libelle);
+      void definirSelection(new Map());
       void dessiner();
       planifier();
     });
+    l.append(i, nom);
     return l;
   };
 
@@ -100,8 +153,12 @@ enregistrerOutil("filtres", "Filtres", "Filtrer par niveau et par type", (sectio
     if (tour !== n) return;
     const niveaux = new Map<string, { alt: number; n: number }>();
     const types = new Map<string, number>();
-    for (const { idx } of res) {
+    idsNiveaux.clear();
+    idsTypes.clear();
+    for (const { m, idx } of res) {
       for (const e of idx.elements.values()) {
+        noter(idsNiveaux, e.niveau, m.id, e.id);
+        noter(idsTypes, libelleCategorie(e.cat), m.id, e.id);
         const alt = idx.niveaux.get(e.niveau) ?? Number.POSITIVE_INFINITY;
         const nv = niveaux.get(e.niveau) ?? { alt, n: 0 };
         nv.n += 1;
@@ -115,10 +172,10 @@ enregistrerOutil("filtres", "Filtres", "Filtrer par niveau et par type", (sectio
       .sort((a, b) => a[1].alt - b[1].alt || a[0].localeCompare(b[0], "fr"))
       .map(([k]) => k);
     typesConnus = [...types.keys()].sort((a, b) => a.localeCompare(b, "fr"));
-    listeNiveaux.replaceChildren(...niveauxConnus.map((k) => caseA(k, niveaux.get(k)!.n, masquesNiveaux)));
-    listeTypes.replaceChildren(...typesConnus.map((k) => caseA(k, types.get(k)!, masquesTypes)));
+    listeNiveaux.replaceChildren(...niveauxConnus.map((k) => caseA(k, niveaux.get(k)!.n, masquesNiveaux, idsNiveaux)));
+    listeTypes.replaceChildren(...typesConnus.map((k) => caseA(k, types.get(k)!, masquesTypes, idsTypes)));
     etat.textContent = res.length
-      ? "Décochez ce que vous voulez masquer. Double-touchez un nom pour n'afficher que lui."
+      ? "La case masque ou affiche. Touchez un nom pour sélectionner ses éléments, puis clic droit pour les colorer. Double-touchez pour n'afficher que lui."
       : "Aucune maquette chargée.";
     if (niveauxConnus.length === 1 && niveauxConnus[0] === SANS_NIVEAU) {
       etat.textContent += " Ces maquettes ne déclarent pas de niveaux.";

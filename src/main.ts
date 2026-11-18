@@ -8,6 +8,7 @@ import "./fiche";
 
 // Outils, dans l'ordre de la barre.
 import "./selection";
+import "./menu-selection";
 import "./outils/coupe";
 import "./outils/mesure";
 import "./outils/filtres";

@@ -870,22 +870,54 @@ textarea.champ {
 }
 
 .cote {
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-texte);
+  border: 1px solid rgba(6, 36, 15, 0.55);
+  background: #4cf08a;
+  color: #052611;
   font-size: 11.5px;
   font-weight: 700;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
 }
 
 .repere-mesure {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  border: 2px solid var(--accent);
-  background: rgba(255, 138, 31, 0.3);
+  border: 2px solid #4cf08a;
+  background: rgba(76, 240, 138, 0.35);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+/* Cotes : trait vert et flèches, par-dessus l'image */
+.dessin-cotes {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.cote-halo {
+  stroke: rgba(4, 20, 10, 0.6);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.cote-trait {
+  stroke: #4cf08a;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.cote-fleche {
+  fill: #4cf08a;
+  stroke: rgba(4, 20, 10, 0.6);
+  stroke-width: 1;
+  stroke-linejoin: round;
 }
 
 /* --- Aide, fiche, attente ------------------------------------------------------- */

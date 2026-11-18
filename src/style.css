@@ -1618,3 +1618,13 @@ body.selection-active .bandeau {
   color: var(--doux);
   white-space: nowrap;
 }
+
+.choix-teinte {
+  width: 34px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--bord);
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}

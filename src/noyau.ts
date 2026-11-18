@@ -1,6 +1,7 @@
 // Noyau partagé : scène 3D, moteur de maquettes, petits utilitaires d'interface.
 import * as THREE from "three";
 import * as OBC from "@thatopen/components";
+import * as OBF from "@thatopen/components-front";
 import type * as FRAGS from "@thatopen/fragments";
 import urlOuvrier from "@thatopen/fragments/worker?url";
 
@@ -38,12 +39,12 @@ export function bouton(classe: string, texte: string, action: () => void, titre?
 export const composants = new OBC.Components();
 export const monde = composants
   .get(OBC.Worlds)
-  .create<OBC.SimpleScene, OBC.OrthoPerspectiveCamera, OBC.SimpleRenderer>();
+  .create<OBC.SimpleScene, OBC.OrthoPerspectiveCamera, OBF.PostproductionRenderer>();
 
 monde.scene = new OBC.SimpleScene(composants);
 monde.scene.setup();
 monde.scene.three.background = new THREE.Color("#0f1318");
-monde.renderer = new OBC.SimpleRenderer(composants, el("scene"));
+monde.renderer = new OBF.PostproductionRenderer(composants, el("scene"));
 monde.camera = new OBC.OrthoPerspectiveCamera(composants);
 composants.init();
 

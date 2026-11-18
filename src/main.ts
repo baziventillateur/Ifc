@@ -16,6 +16,7 @@ import "./outils/quantites";
 import "./outils/clashs";
 import "./outils/remarques";
 import "./outils/assistant";
+import "./outils/styles";
 
 const champFichier = el<HTMLInputElement>("fichier");
 const depot = el("depot");

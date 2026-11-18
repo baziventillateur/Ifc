@@ -30,7 +30,6 @@ const couches: Couche[] = [];
 let selection: { modele: string; id: number } | null = null;
 
 const FANTOME = 0.18;
-const TRANSPARENT = 0.2;
 
 function focusActif() {
   return couches.some((c) => c.focus && [...c.ids.values()].some((s) => s.size > 0));
@@ -42,7 +41,7 @@ function styleBase(m: Maquette): MaterialDefinition | undefined {
     return { color: teinte, opacity: FANTOME, transparent: true, renderedFaces: 0 } as MaterialDefinition;
   }
   if (m.transparente) {
-    return { color: teinte, opacity: TRANSPARENT, transparent: true, renderedFaces: 0 } as MaterialDefinition;
+    return { color: teinte, opacity: m.opacite, transparent: true, renderedFaces: 0 } as MaterialDefinition;
   }
   if (reglages.couleurs) return { color: m.couleur, opacity: 1, transparent: false, renderedFaces: 0 } as MaterialDefinition;
   return undefined;

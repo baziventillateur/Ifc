@@ -9,6 +9,8 @@ export type Maquette = {
   hex: string;
   lot: string;
   transparente: boolean;
+  /** Opacité quand la maquette est transparente (0,05 à 1). */
+  opacite: number;
   exemple: boolean;
 };
 
@@ -32,11 +34,51 @@ const LOTS: { lot: string; hex: string; mots: string[] }[] = [
 ];
 const AUTRES = ["#c084fc", "#fb923c", "#f472b6", "#2dd4bf", "#a3e635", "#94a3b8"];
 
+const CLE_LOTS = "visio-couleurs-lots";
+
+/** Couleurs de lot personnalisées, gardées sur l'appareil. */
+function lisCouleursLots(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(CLE_LOTS) || "{}");
+  } catch {
+    return {};
+  }
+}
+
 export function detecterLot(nom: string) {
   const mots = new Set(normaliser(nom).split(/[^a-z0-9]+/).filter(Boolean));
-  for (const l of LOTS) if (l.mots.some((m) => mots.has(m))) return { lot: l.lot, hex: l.hex };
-  const deja = [...maquettes.values()].filter((m) => m.lot === "Autre").length;
-  return { lot: "Autre", hex: AUTRES[deja % AUTRES.length] };
+  let lot = "Autre";
+  let hex = "";
+  for (const l of LOTS) {
+    if (l.mots.some((m) => mots.has(m))) {
+      lot = l.lot;
+      hex = l.hex;
+      break;
+    }
+  }
+  if (!hex) {
+    const deja = [...maquettes.values()].filter((m) => m.lot === "Autre").length;
+    hex = AUTRES[deja % AUTRES.length];
+  }
+  return { lot, hex: lisCouleursLots()[lot] ?? hex };
+}
+
+/** Change la couleur de tout un lot (toutes les maquettes de ce lot). */
+export function definirCouleurLot(lot: string, hex: string) {
+  const r = lisCouleursLots();
+  r[lot] = hex;
+  try {
+    localStorage.setItem(CLE_LOTS, JSON.stringify(r));
+  } catch {
+    // Mémoire locale indisponible : couleur gardée pour la session.
+  }
+  for (const m of maquettes.values()) {
+    if (m.lot === lot) {
+      m.hex = hex;
+      m.couleur = new THREE.Color(hex);
+    }
+  }
+  changement.emit();
 }
 
 let exempleEnCours = false;
@@ -55,6 +97,7 @@ fragments.list.onItemSet.add(({ key, value: modele }) => {
     hex,
     lot,
     transparente: false,
+    opacite: 0.2,
     exemple: exempleEnCours,
   });
   void fragments.core.update(true);

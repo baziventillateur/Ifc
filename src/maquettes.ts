@@ -15,7 +15,15 @@ import {
   monde,
   rafraichir,
 } from "./noyau";
-import { changement, maquettes, marquerExemple, reglages, visibles, type Maquette } from "./registre";
+import {
+  changement,
+  definirCouleurLot,
+  maquettes,
+  marquerExemple,
+  reglages,
+  visibles,
+  type Maquette,
+} from "./registre";
 import { appliquerApparence, appliquerVisibilite, oublierMaquette } from "./apparence";
 import { fermerFiche } from "./fiche";
 import { oublierIndex } from "./index-elements";
@@ -67,10 +75,23 @@ function dessinerCalques() {
       () => void changerVisibilite([[m, !m.modele.object.visible]]),
       `Afficher / masquer « ${m.id} » (${m.lot})`,
     );
-    const point = cree("span", "point");
-    point.style.setProperty("--teinte", m.hex);
-    nom.append(point, cree("span", "texte", m.id));
-    rang.append(nom);
+    const choix = cree("input", "choix-couleur");
+    choix.type = "color";
+    choix.value = m.hex;
+    choix.style.setProperty("--teinte", m.hex);
+    choix.title = `Couleur du lot ${m.lot}`;
+    choix.setAttribute("aria-label", `Couleur du lot ${m.lot}`);
+    choix.addEventListener("input", () => {
+      // Aperçu immédiat de la pastille ; la recoloration se fait au relâchement.
+      choix.style.setProperty("--teinte", choix.value);
+    });
+    choix.addEventListener("change", () => {
+      definirCouleurLot(m.lot, choix.value);
+      void appliquerApparence();
+      dessinerCalques();
+    });
+    nom.append(cree("span", "texte", m.id));
+    rang.append(choix, nom);
 
     const transp = boutonIcone(
       "transparence",
@@ -83,6 +104,23 @@ function dessinerCalques() {
       "icone" + (m.transparente ? " allume" : ""),
     );
     rang.append(transp);
+    if (m.transparente) {
+      const curseur = cree("input", "curseur-transparence");
+      curseur.type = "range";
+      curseur.min = "5";
+      curseur.max = "100";
+      curseur.step = "5";
+      curseur.value = String(Math.round(m.opacite * 100));
+      curseur.title = `Opacité de « ${m.id} »`;
+      curseur.setAttribute("aria-label", `Opacité de « ${m.id} »`);
+      const valeur = cree("span", "valeur-transparence", `${curseur.value} %`);
+      curseur.addEventListener("input", () => {
+        m.opacite = Number(curseur.value) / 100;
+        valeur.textContent = `${curseur.value} %`;
+        void appliquerApparence([m.id]);
+      });
+      rang.append(curseur, valeur);
+    }
     if (liste.length > 1) {
       rang.append(
         boutonIcone(

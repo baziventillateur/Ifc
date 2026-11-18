@@ -3,7 +3,7 @@ import type { User } from "@supabase/supabase-js";
 import { alerte, attente, bouton, cree, el } from "../noyau";
 import { maquettes as affichees } from "../registre";
 import { ajouterIfc, chargerExemple, exempleAffiche, ouvrirDepuisNuage, retirer } from "../maquettes";
-import { adresseSite, MAQUETTES_MAX, nuage, OCTETS_MAX, taille } from "./client";
+import { adresseSite, MAQUETTES_MAX, nuage, OCTETS_MAX, OCTETS_MAX_ADMIN, taille } from "./client";
 import { seDeconnecter } from "./compte";
 
 type Projet = { id: string; nom: string; proprietaire: string };
@@ -94,7 +94,8 @@ function messageErreur(e: { message?: string; code?: string } | null) {
   if (m.includes("LIMITE_PROJETS")) return "Vous avez déjà un projet (un seul par compte).";
   if (m.includes("LIMITE_MAQUETTES")) return `Le projet a déjà ${MAQUETTES_MAX} maquettes (maximum).`;
   if (e?.code === "23505") return "Une maquette porte déjà ce nom dans le projet.";
-  if (m.toLowerCase().includes("exceeded the maximum allowed size")) return "Fichier trop lourd (50 Mo maximum).";
+  if (m.toLowerCase().includes("exceeded the maximum allowed size") || m.includes("TAILLE_MAX"))
+    return "Fichier trop lourd pour votre compte.";
   return "L'opération a échoué. Réessayez.";
 }
 
@@ -199,7 +200,8 @@ export async function deposer(fichiers: File[]) {
   const pris = new Set(etat.fichiers.map((f) => nomLocal(f.nom).toLowerCase()));
   for (const f of ifc) {
     const cle = nomLocal(f.name).toLowerCase();
-    if (f.size > OCTETS_MAX) refus.push(`« ${f.name} » dépasse 50 Mo (${taille(f.size)})`);
+    const plafond = etat.admin ? OCTETS_MAX_ADMIN : OCTETS_MAX;
+    if (f.size > plafond) refus.push(`« ${f.name} » dépasse ${taille(plafond)} (${taille(f.size)})`);
     else if (f.size === 0) refus.push(`« ${f.name} » est vide`);
     else if (pris.has(cle)) refus.push(`« ${f.name} » existe déjà dans le projet`);
     else if (etat.fichiers.length + retenus.length >= MAQUETTES_MAX)

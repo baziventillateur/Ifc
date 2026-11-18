@@ -35,6 +35,15 @@ const LOTS: { lot: string; hex: string; mots: string[] }[] = [
 const AUTRES = ["#c084fc", "#fb923c", "#f472b6", "#2dd4bf", "#a3e635", "#94a3b8"];
 
 const CLE_LOTS = "visio-couleurs-lots";
+const CLE_MAQUETTES = "visio-couleurs-maquettes";
+
+function lisCouleursMaquettes(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(CLE_MAQUETTES) ?? "{}");
+  } catch {
+    return {};
+  }
+}
 
 /** Couleurs de lot personnalisées, gardées sur l'appareil. */
 function lisCouleursLots(): Record<string, string> {
@@ -63,6 +72,19 @@ export function detecterLot(nom: string) {
   return { lot, hex: lisCouleursLots()[lot] ?? hex };
 }
 
+/** Couleur propre à une maquette, gardée sur l'appareil. */
+export function definirCouleurMaquette(m: Maquette, hex: string) {
+  const r = lisCouleursMaquettes();
+  r[m.id] = hex;
+  try {
+    localStorage.setItem(CLE_MAQUETTES, JSON.stringify(r));
+  } catch {
+    // Mémoire locale indisponible : couleur gardée pour la session.
+  }
+  m.hex = hex;
+  m.couleur = new THREE.Color(hex);
+}
+
 /** Change la couleur de tout un lot (toutes les maquettes de ce lot). */
 export function definirCouleurLot(lot: string, hex: string) {
   const r = lisCouleursLots();
@@ -89,7 +111,8 @@ export function marquerExemple(actif: boolean) {
 fragments.list.onItemSet.add(({ key, value: modele }) => {
   modele.useCamera(monde.camera.three);
   monde.scene.three.add(modele.object);
-  const { lot, hex } = detecterLot(key);
+  const { lot, hex: hexLot } = detecterLot(key);
+  const hex = lisCouleursMaquettes()[key] ?? hexLot;
   maquettes.set(key, {
     id: key,
     modele,

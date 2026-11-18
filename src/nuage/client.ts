@@ -17,6 +17,8 @@ export const nuage = createClient(
 
 export const MAQUETTES_MAX = 10;
 export const OCTETS_MAX = 50 * 1024 * 1024;
+/** Limite réservée au compte administrateur. */
+export const OCTETS_MAX_ADMIN = 500 * 1024 * 1024;
 
 export function taille(octets: number) {
   if (octets < 1024 * 1024) return `${Math.max(1, Math.round(octets / 1024))} ko`;

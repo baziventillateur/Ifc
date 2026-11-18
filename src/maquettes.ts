@@ -17,7 +17,7 @@ import {
 } from "./noyau";
 import {
   changement,
-  definirCouleurLot,
+  definirCouleurMaquette,
   maquettes,
   marquerExemple,
   reglages,
@@ -79,14 +79,23 @@ function dessinerCalques() {
     choix.type = "color";
     choix.value = m.hex;
     choix.style.setProperty("--teinte", m.hex);
-    choix.title = `Couleur du lot ${m.lot}`;
-    choix.setAttribute("aria-label", `Couleur du lot ${m.lot}`);
+    choix.title = `Couleur de « ${m.id} »`;
+    choix.setAttribute("aria-label", `Couleur de « ${m.id} »`);
     choix.addEventListener("input", () => {
       // Aperçu immédiat de la pastille ; la recoloration se fait au relâchement.
       choix.style.setProperty("--teinte", choix.value);
     });
     choix.addEventListener("change", () => {
-      definirCouleurLot(m.lot, choix.value);
+      // Choisir une couleur allume le mode couleurs, sinon elle ne se voit pas.
+      definirCouleurMaquette(m, choix.value);
+      if (!reglages.couleurs) {
+        reglages.couleurs = true;
+        try {
+          localStorage.setItem("visio-couleurs", "1");
+        } catch {
+          // Mémoire locale indisponible : réglage gardé pour la session.
+        }
+      }
       void appliquerApparence();
       dessinerCalques();
     });

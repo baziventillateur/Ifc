@@ -1,7 +1,9 @@
 // Point d'entrée : commandes de la barre du haut, outils, démarrage.
 import { el, fragments, monde } from "./noyau";
 import { maquettes } from "./registre";
-import { ajouterIfc, chargerExemple, exempleAffiche, recadrer, rouvrirMemorisees } from "./maquettes";
+import { recadrer } from "./maquettes";
+import { attendreSession } from "./nuage/compte";
+import { demanderDepot, demarrerNuage, deposer } from "./nuage/projets";
 import "./fiche";
 
 // Outils, dans l'ordre de la barre.
@@ -18,22 +20,15 @@ const champFichier = el<HTMLInputElement>("fichier");
 const depot = el("depot");
 const aide = el("aide");
 
-el("btn-ajouter").addEventListener("click", () => champFichier.click());
-el("btn-exemple").addEventListener("click", () => {
-  if (
-    !exempleAffiche() &&
-    maquettes.size > 0 &&
-    !window.confirm("Retirer vos maquettes (aussi de la mémoire de l'appareil) et afficher l'exemple ?")
-  )
-    return;
-  void chargerExemple();
+el("btn-ajouter").addEventListener("click", () => {
+  if (demanderDepot()) champFichier.click();
 });
 el("btn-recadrer").addEventListener("click", () => void recadrer());
 
 champFichier.addEventListener("change", () => {
   const fichiers = [...(champFichier.files ?? [])];
   champFichier.value = "";
-  if (fichiers.length > 0) void ajouterIfc(fichiers);
+  if (fichiers.length > 0) void deposer(fichiers);
 });
 
 window.addEventListener("dragover", (e) => {
@@ -47,13 +42,13 @@ window.addEventListener("drop", (e) => {
   e.preventDefault();
   depot.classList.remove("actif");
   const fichiers = [...(e.dataTransfer?.files ?? [])];
-  if (fichiers.length > 0) void ajouterIfc(fichiers);
+  if (fichiers.length > 0) void deposer(fichiers);
 });
 
 window.setTimeout(() => aide.classList.add("cache"), 9000);
 
 async function demarrer() {
-  if (!(await rouvrirMemorisees())) await chargerExemple();
+  await demarrerNuage(await attendreSession());
 }
 void demarrer();
 

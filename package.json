@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.119.0",
     "@thatopen/components": "3.6.0",
     "@thatopen/components-front": "3.6.1",
     "@thatopen/fragments": "3.6.1",

@@ -319,12 +319,12 @@ async function memoriser(id: string) {
 let chargementEnCours = false;
 
 /** Ajoute une ou plusieurs maquettes IFC à celles déjà affichées. */
-export async function ajouterIfc(fichiers: File[]) {
-  if (chargementEnCours) return;
+export async function ajouterIfc(fichiers: File[]): Promise<string[]> {
+  if (chargementEnCours) return [];
   const ifc = fichiers.filter((f) => /\.ifc$/i.test(f.name));
   if (ifc.length === 0) {
     alerte("Ce fichier n'est pas un IFC. Depuis Revit : Fichier → Exporter → IFC.");
-    return;
+    return [];
   }
   chargementEnCours = true;
   const echecs: string[] = [];
@@ -374,6 +374,49 @@ export async function ajouterIfc(fichiers: File[]) {
   } else if (ifc.length < fichiers.length) {
     alerte("Seuls les fichiers .ifc ont été ajoutés.");
   }
+  return ajoutees;
+}
+
+export type MaquetteNuage = { nom: string; date: string; telecharger: () => Promise<File> };
+
+/**
+ * Affiche les maquettes d'un projet du cloud. Celles déjà converties sur cet appareil
+ * sont rouvertes directement ; les autres sont téléchargées puis converties.
+ */
+export async function ouvrirDepuisNuage(liste: MaquetteNuage[]) {
+  await vider(true);
+  const cache = await lireTout<Enregistrement>("maquettes");
+  const noms = new Set(liste.map((l) => l.nom));
+  for (const e of cache) if (!noms.has(e.id)) await effacer("maquettes", e.id);
+
+  const aConvertir: File[] = [];
+  let echecs = 0;
+  try {
+    for (const [i, l] of liste.entries()) {
+      const garde = cache.find((c) => c.id === l.nom && Date.parse(c.date) >= Date.parse(l.date));
+      if (garde) {
+        attente(`Ouverture de « ${l.nom} »…`, i / liste.length);
+        try {
+          await fragments.core.load(garde.donnees, { modelId: garde.id });
+          continue;
+        } catch (err) {
+          console.error(err);
+        }
+      }
+      attente(`Téléchargement de « ${l.nom} »…`, i / liste.length);
+      try {
+        aConvertir.push(await l.telecharger());
+      } catch (err) {
+        console.error(err);
+        echecs += 1;
+      }
+    }
+    if (maquettes.size > 0) await apresChargement();
+  } finally {
+    attente(null);
+  }
+  if (aConvertir.length > 0) await ajouterIfc(aConvertir);
+  if (echecs > 0) alerte(`${echecs} maquette(s) n'ont pas pu être téléchargées.`);
 }
 
 /** Rouvre les maquettes gardées sur l'appareil. Renvoie false s'il n'y en a pas. */

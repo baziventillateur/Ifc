@@ -13,6 +13,114 @@ document.body.append(porte);
 let resoudre: (u: User) => void = () => {};
 let connecte = false;
 
+const SVG_MAQUETTE = `<svg viewBox="0 0 400 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Aperçu d'une maquette 3D" font-family="system-ui, sans-serif">
+<defs>
+<pattern id="grille" width="20" height="20" patternUnits="userSpaceOnUse">
+<path d="M20 0H0V20" fill="none" stroke="#2c3747" stroke-width="1"/>
+</pattern>
+</defs>
+<rect width="400" height="280" fill="url(#grille)"/>
+<ellipse cx="200" cy="262" rx="132" ry="20" fill="#000" opacity=".35"/>
+<path d="M200 50 L290 95 L200 140 L110 95 Z" fill="#4a5566"/>
+<path d="M110 95 L200 140 L200 260 L110 215 Z" fill="#363f4e"/>
+<path d="M200 140 L290 95 L290 215 L200 260 Z" fill="#2a3240"/>
+<g fill="#131a24">
+<g transform="matrix(90 -45 0 1 200 140)">
+<rect x=".15" y="8" width=".25" height="22"/><rect x=".55" y="8" width=".25" height="22"/>
+<rect x=".15" y="48" width=".25" height="22"/><rect x=".55" y="48" width=".25" height="22"/>
+<rect x=".15" y="88" width=".25" height="22"/><rect x=".55" y="88" width=".25" height="22"/>
+</g>
+<g transform="matrix(90 45 0 1 110 95)">
+<rect x=".15" y="8" width=".25" height="22"/><rect x=".55" y="8" width=".25" height="22"/>
+<rect x=".15" y="48" width=".25" height="22"/><rect x=".55" y="48" width=".25" height="22"/>
+<rect x=".15" y="88" width=".25" height="22"/><rect x=".55" y="88" width=".25" height="22"/>
+</g>
+</g>
+<g fill="none" stroke="#ff8a1f" stroke-width="2" stroke-linejoin="round" stroke-linecap="round">
+<path d="M200 50 L290 95 L200 140 L110 95 Z"/>
+<path d="M110 95 V215 L200 260 V140"/>
+<path d="M290 95 V215 L200 260"/>
+</g>
+<g fill="none" stroke="#ff8a1f" stroke-width="1" opacity=".55">
+<path d="M110 135 L200 180 L290 135"/>
+<path d="M110 175 L200 220 L290 175"/>
+</g>
+<path d="M83 54 L110 95" stroke="#ff8a1f" stroke-width="1" stroke-dasharray="3 3"/>
+<rect x="24" y="28" width="118" height="26" rx="13" fill="#ff8a1f"/>
+<text x="83" y="45" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1206">Mesure 12,40 m</text>
+<rect x="262" y="236" width="112" height="24" rx="12" fill="#2a3240" stroke="#ff8a1f" stroke-width="1"/>
+<text x="318" y="252" text-anchor="middle" font-size="11" fill="#e6ebf1">Clash détecté</text>
+</svg>`;
+
+/** Marque NexBim avec la mention « by PaceApp » dessous. */
+function marqueNexBim() {
+  const marque = cree("div", "porte-marque");
+  const logo = cree("img", "logo");
+  logo.src = "logo.svg";
+  logo.alt = "";
+  const nom = cree("div", "marque-texte");
+  nom.append(cree("span", "marque-nom", "NexBim"), cree("span", "marque-par", "by PaceApp"));
+  marque.append(logo, nom);
+  return marque;
+}
+
+/** Page d'accueil : présentation de l'application, avec accès à la connexion. */
+function accueil() {
+  porte.hidden = false;
+  porte.classList.add("porte-accueil");
+
+  const page = cree("div", "accueil");
+
+  const haut = cree("header", "accueil-haut");
+  const marque = marqueNexBim();
+  marque.classList.add("accueil-marque");
+  const connexion = cree("button", "btn accueil-connexion", "Se connecter");
+  connexion.type = "button";
+  connexion.addEventListener("click", () => afficher("connexion"));
+  haut.append(marque, connexion);
+
+  const hero = cree("section", "accueil-hero");
+  const texte = cree("div", "accueil-texte");
+  const demarrer = cree("button", "btn principal accueil-demarrer", "Démarrer tout de suite");
+  demarrer.type = "button";
+  demarrer.addEventListener("click", () => afficher("connexion"));
+  texte.append(
+    cree("p", "accueil-etiquette", "Visionneuse IFC en ligne"),
+    cree("h1", "accueil-titre", "Vos maquettes BIM, ouvertes et partagées en un clic"),
+    cree(
+      "p",
+      "accueil-sous",
+      "Consultez vos fichiers IFC dans le navigateur, sans logiciel à installer. Mesurez, coupez, comptez les quantités et invitez vos équipes en lecture seule.",
+    ),
+    demarrer,
+  );
+  const image = cree("div", "accueil-image");
+  image.innerHTML = SVG_MAQUETTE;
+  hero.append(texte, image);
+
+  const atouts = cree("ul", "accueil-atouts");
+  const items: [string, string][] = [
+    ["Ouvrir", "Déposez plusieurs maquettes et affichez-les superposées, jusqu'à 50 Mo chacune."],
+    ["Analyser", "Mesures, coupes, quantités, détection des clashs et arêtes colorées pour lire les volumes."],
+    ["Partager", "Invitez vos équipes par e-mail, en lecture seule, sur un projet commun."],
+  ];
+  for (const [titre, description] of items) {
+    const li = cree("li", "accueil-atout");
+    li.append(cree("h2", "", titre), cree("p", "", description));
+    atouts.append(li);
+  }
+
+  const pied = cree("footer", "accueil-pied");
+  const paceapp = cree("a", "", "Une application PaceApp");
+  paceapp.href = "https://paceapp.fr";
+  paceapp.target = "_blank";
+  paceapp.rel = "noopener";
+  pied.append(cree("span", "", "NexBim · by PaceApp"), paceapp);
+
+  page.append(haut, hero, atouts, pied);
+  porte.replaceChildren(page);
+}
+
 function champ(libelle: string, type: string, nom: string, auto: string) {
   const bloc = cree("label", "porte-champ");
   const saisie = cree("input");
@@ -40,12 +148,15 @@ function traduire(message: string) {
 
 function afficher(mode: Mode, info = "", avecPrenom = false) {
   porte.hidden = false;
+  porte.classList.remove("porte-accueil");
   const boite = cree("form", "porte-boite");
-  const marque = cree("div", "porte-marque");
-  const logo = cree("img", "logo");
-  logo.src = "logo.svg";
-  logo.alt = "";
-  marque.append(logo, cree("span", "", "NexBim"));
+  const marque = marqueNexBim();
+  if (mode === "connexion") {
+    const retour = cree("button", "lien accueil-retour", "← Accueil");
+    retour.type = "button";
+    retour.addEventListener("click", accueil);
+    marque.append(retour);
+  }
   const titres: Record<Mode, string> = {
     connexion: "Connexion",
     inscription: "Créer un compte",
@@ -193,7 +304,8 @@ export function attendreSession(): Promise<User> {
         entrer(session.user);
       } else {
         choixMotDePasse = false;
-        afficher("connexion", erreurLien ? "Ce lien n'est plus valable. Demandez-en un nouveau." : "");
+        if (erreurLien) afficher("connexion", "Ce lien n'est plus valable. Demandez-en un nouveau.");
+        else accueil();
       }
     });
   });

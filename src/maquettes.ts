@@ -328,6 +328,8 @@ async function memoriser(id: string) {
 }
 
 let chargementEnCours = false;
+/** Vrai pendant qu'une maquette est lue ou convertie. */
+export const chargementOccupe = () => chargementEnCours;
 
 /** Ajoute une ou plusieurs maquettes IFC à celles déjà affichées. */
 export async function ajouterIfc(fichiers: File[]): Promise<string[]> {

@@ -2,8 +2,16 @@
 import type { User } from "@supabase/supabase-js";
 import { alerte, attente, bouton, cree, el } from "../noyau";
 import { maquettes as affichees } from "../registre";
-import { ajouterIfc, chargerExemple, exempleAffiche, ouvrirDepuisNuage, retirer } from "../maquettes";
+import {
+  ajouterIfc,
+  chargementOccupe,
+  chargerExemple,
+  exempleAffiche,
+  ouvrirDepuisNuage,
+  retirer,
+} from "../maquettes";
 import { adresseSite, MAQUETTES_MAX, nuage, OCTETS_MAX, OCTETS_MAX_ADMIN, taille } from "./client";
+import { envoyerMaquette } from "./envoi";
 import { seDeconnecter } from "./compte";
 
 type Projet = { id: string; nom: string; proprietaire: string };
@@ -107,15 +115,17 @@ function majBandeau() {
 
 // --- Données ----------------------------------------------------------------------
 
-function messageErreur(e: { message?: string; code?: string } | null) {
+function messageErreur(e: { message?: string; code?: string; statut?: number } | null) {
   const m = e?.message ?? "";
   if (m.includes("LIMITE_PROJETS")) return "Vous avez déjà un projet (un seul par compte).";
   if (m.includes("LIMITE_MAQUETTES")) return `Le projet a déjà ${MAQUETTES_MAX} maquettes (maximum).`;
   if (e?.code === "23505") return "Une maquette porte déjà ce nom dans le projet.";
-  if (m.toLowerCase().includes("exceeded the maximum allowed size") || m.includes("TAILLE_MAX"))
+  if (e?.statut === 413 || /maximum allowed size|payload too large/i.test(m) || m.includes("TAILLE_MAX"))
     return etat.admin
-      ? "refusé par le stockage : la limite d'envoi de Supabase (Storage → Settings) est plus basse que ce fichier."
+      ? "refusé par le stockage : la limite d'envoi de Supabase (Storage → Settings → Upload file size limit) est plus basse que ce fichier."
       : `fichier trop lourd (${taille(OCTETS_MAX)} maximum).`;
+  // L'administrateur voit le message exact, pour pouvoir diagnostiquer.
+  if (etat.admin && m) return `échec (${e?.statut ?? e?.code ?? "?"}) : ${m.slice(0, 160)}`;
   return "L'opération a échoué. Réessayez.";
 }
 
@@ -215,7 +225,11 @@ export function demanderDepot() {
 let depotEnCours = false;
 
 export async function deposer(fichiers: File[]) {
-  if (depotEnCours || !demanderDepot() || !etat.courant) return;
+  if (depotEnCours) {
+    alerte("Un envoi est déjà en cours : attendez la fin, puis redéposez le fichier.");
+    return;
+  }
+  if (!demanderDepot() || !etat.courant) return;
   const projet = etat.courant;
   const ifc = fichiers.filter((f) => /\.ifc$/i.test(f.name));
   if (ifc.length === 0) {
@@ -243,19 +257,30 @@ export async function deposer(fichiers: File[]) {
     return;
   }
 
+  if (chargementOccupe()) {
+    alerte("Une maquette est en cours de chargement : attendez la fin, puis redéposez le fichier.");
+    return;
+  }
   depotEnCours = true;
   try {
+    // Une copie affichée mais non enregistrée porterait le même nom : on la retire d'abord.
+    for (const f of retenus) if (affichees.has(nomLocal(f.name))) await retirer(nomLocal(f.name));
     // Conversion d'abord : on n'envoie dans le cloud que des fichiers lisibles.
     const lus = new Set(await ajouterIfc(retenus));
     for (const [i, f] of retenus.entries()) {
       const local = nomLocal(f.name);
-      if (!lus.has(local)) continue;
-      attente(`Envoi de « ${local} » (${taille(f.size)}) dans le cloud… Ne fermez pas la page.`, i / retenus.length);
+      if (!lus.has(local)) {
+        refus.push(`« ${f.name} » n'a pas pu être lue (IFC illisible ou trop lourd pour ce navigateur)`);
+        continue;
+      }
       const chemin = `${projet.id}/${crypto.randomUUID()}.ifc`;
-      const envoi = await nuage.storage
-        .from("maquettes")
-        .upload(chemin, f, { contentType: "application/octet-stream" });
-      let erreur: { message?: string; code?: string } | null = envoi.error;
+      const avance = (part: number) =>
+        attente(
+          `Envoi de « ${local} » : ${Math.round(part * 100)} % de ${taille(f.size)}… Ne fermez pas la page.`,
+          (i + part) / retenus.length,
+        );
+      avance(0);
+      let erreur: { message?: string; code?: string; statut?: number } | null = await envoyerMaquette(chemin, f, avance);
       if (!erreur) {
         const ligne = await nuage
           .from("maquettes")

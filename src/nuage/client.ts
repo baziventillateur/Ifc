@@ -10,10 +10,10 @@ export const erreurLien = parametres.get("error_description");
 
 export const adresseSite = window.location.origin + window.location.pathname;
 
-export const nuage = createClient(
-  "https://gmirbodifgxxnsfyfuyr.supabase.co",
-  "sb_publishable_aoozWfzWkCfGCfqNpWzFlw_I0ACEzrB",
-);
+export const URL_NUAGE = "https://gmirbodifgxxnsfyfuyr.supabase.co";
+export const CLE_PUBLIQUE = "sb_publishable_aoozWfzWkCfGCfqNpWzFlw_I0ACEzrB";
+
+export const nuage = createClient(URL_NUAGE, CLE_PUBLIQUE);
 
 export const MAQUETTES_MAX = 10;
 export const OCTETS_MAX = 50 * 1024 * 1024;

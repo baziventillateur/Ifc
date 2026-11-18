@@ -16,3 +16,9 @@ export const demandeOutil = new Signal<string>();
 
 /** Ouvrir le menu d'apparence (couleur, opacité…) sur des éléments, à une position d'écran. */
 export const demandeMenu = new Signal<{ ids: Map<string, Set<number>>; x: number; y: number }>();
+
+/** Sélectionner les éléments semblables (même catégorie, même type ou même niveau). */
+export const demandeSimilaires = new Signal<{
+  ids: Map<string, Set<number>>;
+  critere: "categorie" | "type" | "niveau";
+}>();

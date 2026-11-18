@@ -14,7 +14,7 @@ import {
 } from "./apparence";
 import { libelleAttribut, libelleCategorie, formaterValeur } from "./libelles";
 import { AVEC_PROPRIETES, lireJeux } from "./index-elements";
-import { demandeMenu, demandeRemarque } from "./evenements";
+import { demandeMenu, demandeRemarque, demandeSimilaires } from "./evenements";
 
 type Donnees = Record<string, any>;
 export type Visee = { modele: string; id: number; point: THREE.Vector3 } | null;
@@ -172,6 +172,9 @@ export async function montrerElement(idModele: string, idLocal: number, centrer 
       await fermerFiche();
       await masquer(idsDe(idModele, idLocal));
     }),
+    bouton("puce", "Similaires", () =>
+      demandeSimilaires.emit({ ids: idsDe(idModele, idLocal), critere: "categorie" }),
+    ),
     bouton("puce", "Couleur", (ev?: Event) => {
       const r = (ev?.currentTarget as HTMLElement | undefined)?.getBoundingClientRect();
       demandeMenu.emit({ ids: idsDe(idModele, idLocal), x: r?.left ?? 40, y: (r?.bottom ?? 80) + 4 });

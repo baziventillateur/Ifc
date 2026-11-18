@@ -7,7 +7,8 @@ import { adresseSite, MAQUETTES_MAX, nuage, OCTETS_MAX, OCTETS_MAX_ADMIN, taille
 import { seDeconnecter } from "./compte";
 
 type Projet = { id: string; nom: string; proprietaire: string };
-type Fichier = { id: string; nom: string; chemin: string; taille: number; cree_le: string };
+type Fichier = { id: string; nom: string; chemin: string; taille: number; cree_le: string; supprime_le: string | null };
+const CORBEILLE_JOURS = 60;
 type Personne = { utilisateur_id: string | null; email: string; prenom: string; role: string };
 
 const etat = {
@@ -16,6 +17,7 @@ const etat = {
   projets: [] as Projet[],
   courant: null as Projet | null,
   fichiers: [] as Fichier[],
+  corbeille: [] as Fichier[],
   personnes: [] as Personne[],
 };
 
@@ -59,6 +61,22 @@ function ouvrirFenetre(titre: string, large = false) {
 
 const section = (titre: string) => cree("div", "modale-titre", titre);
 
+/** Fenêtre de confirmation : le bouton d'action est explicite, Annuler revient au panneau. */
+function confirmer(titre: string, texte: string, action: string, danger = false): Promise<boolean> {
+  return new Promise((ok) => {
+    const corps = ouvrirFenetre(titre);
+    const pied = cree("div", "modale-pied confirmer");
+    pied.append(
+      bouton("btn", "Annuler", () => ok(false)),
+      bouton(danger ? "btn danger" : "btn principal", action, () => ok(true)),
+    );
+    corps.append(cree("p", "modale-texte", texte), pied);
+  });
+}
+
+const jours = (iso: string) =>
+  Math.max(0, CORBEILLE_JOURS - Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+
 // --- Bandeau « Commencer » ---------------------------------------------------------
 
 const bandeau = cree("div", "bandeau");
@@ -95,7 +113,9 @@ function messageErreur(e: { message?: string; code?: string } | null) {
   if (m.includes("LIMITE_MAQUETTES")) return `Le projet a déjà ${MAQUETTES_MAX} maquettes (maximum).`;
   if (e?.code === "23505") return "Une maquette porte déjà ce nom dans le projet.";
   if (m.toLowerCase().includes("exceeded the maximum allowed size") || m.includes("TAILLE_MAX"))
-    return "Fichier trop lourd pour votre compte.";
+    return etat.admin
+      ? "refusé par le stockage : la limite d'envoi de Supabase (Storage → Settings) est plus basse que ce fichier."
+      : `fichier trop lourd (${taille(OCTETS_MAX)} maximum).`;
   return "L'opération a échoué. Réessayez.";
 }
 
@@ -111,13 +131,20 @@ async function chargerProjets() {
 
 async function chargerDetails() {
   etat.fichiers = [];
+  etat.corbeille = [];
   etat.personnes = [];
   if (!etat.courant) return;
   const [{ data: f }, { data: p }] = await Promise.all([
-    nuage.from("maquettes").select("id, nom, chemin, taille, cree_le").eq("projet_id", etat.courant.id).order("cree_le"),
+    nuage
+      .from("maquettes")
+      .select("id, nom, chemin, taille, cree_le, supprime_le")
+      .eq("projet_id", etat.courant.id)
+      .order("cree_le"),
     nuage.rpc("personnes_du_projet", { p: etat.courant.id }),
   ]);
-  etat.fichiers = (f ?? []) as Fichier[];
+  const tous = (f ?? []) as Fichier[];
+  etat.fichiers = tous.filter((x) => !x.supprime_le);
+  etat.corbeille = tous.filter((x) => x.supprime_le);
   etat.personnes = (p ?? []) as Personne[];
 }
 
@@ -223,7 +250,7 @@ export async function deposer(fichiers: File[]) {
     for (const [i, f] of retenus.entries()) {
       const local = nomLocal(f.name);
       if (!lus.has(local)) continue;
-      attente(`Envoi de « ${local} » dans le cloud…`, i / retenus.length);
+      attente(`Envoi de « ${local} » (${taille(f.size)}) dans le cloud… Ne fermez pas la page.`, i / retenus.length);
       const chemin = `${projet.id}/${crypto.randomUUID()}.ifc`;
       const envoi = await nuage.storage
         .from("maquettes")
@@ -249,7 +276,7 @@ export async function deposer(fichiers: File[]) {
   await chargerDetails();
   majBandeau();
   if (affichees.size === 0) await chargerExemple();
-  if (refus.length > 0) alerte(refus.join(" · "), 9000);
+  if (refus.length > 0) alerte(`Non enregistré dans le projet — ${refus.join(" · ")}`, 15000);
 }
 
 // --- Panneau « Projet » -----------------------------------------------------------
@@ -361,15 +388,28 @@ function ouvrirPanneau(info = "") {
     for (const f of etat.fichiers) {
       const suppr = createur()
         ? bouton("lien danger", "Supprimer", async () => {
-            if (!window.confirm(`Supprimer « ${f.nom} » du projet, pour tout le monde ?`)) return;
-            await nuage.storage.from("maquettes").remove([f.chemin]);
-            const { error } = await nuage.from("maquettes").delete().eq("id", f.id);
-            if (error) return alerte(messageErreur(error));
+            const oui = await confirmer(
+              "Supprimer la maquette ?",
+              `« ${f.nom} » quittera le projet, pour vous et pour les personnes invitées. ` +
+                `Elle reste dans la corbeille pendant ${CORBEILLE_JOURS} jours : vous pourrez la restaurer d'ici là. ` +
+                `Ensuite, elle sera effacée définitivement.`,
+              "Mettre à la corbeille",
+              true,
+            );
+            if (!oui) return ouvrirPanneau();
+            const { error } = await nuage
+              .from("maquettes")
+              .update({ supprime_le: new Date().toISOString() })
+              .eq("id", f.id);
+            if (error) {
+              alerte(messageErreur(error));
+              return ouvrirPanneau();
+            }
             if (affichees.has(nomLocal(f.nom))) await retirer(nomLocal(f.nom));
             await chargerDetails();
             if (affichees.size === 0) await chargerExemple();
             majBandeau();
-            ouvrirPanneau();
+            ouvrirPanneau(`« ${f.nom} » est dans la corbeille (${CORBEILLE_JOURS} jours).`);
           })
         : undefined;
       corps.append(ligne(f.nom, taille(f.taille), suppr));
@@ -381,6 +421,49 @@ function ouvrirPanneau(info = "") {
           btnAjouter.click();
         }),
       );
+    }
+
+    if (createur() && etat.corbeille.length) {
+      corps.append(section(`Corbeille · ${etat.corbeille.length}`));
+      for (const f of etat.corbeille) {
+        const reste = jours(f.supprime_le!);
+        const actions = cree("div", "modale-actions");
+        actions.append(
+          bouton("lien", "Restaurer", async () => {
+            const { error } = await nuage.from("maquettes").update({ supprime_le: null }).eq("id", f.id);
+            if (error) {
+              alerte(
+                error.code === "23505"
+                  ? "Une maquette du projet porte déjà ce nom : supprimez-la d'abord."
+                  : messageErreur(error),
+              );
+              return;
+            }
+            await chargerDetails();
+            majBandeau();
+            await ouvrirProjet(projet);
+            ouvrirPanneau(`« ${f.nom} » est de retour dans le projet.`);
+          }),
+          bouton("lien danger", "Effacer", async () => {
+            const oui = await confirmer(
+              "Effacer définitivement ?",
+              `« ${f.nom} » sera effacée tout de suite, sans retour possible.`,
+              "Effacer définitivement",
+              true,
+            );
+            if (oui) {
+              await nuage.storage.from("maquettes").remove([f.chemin]);
+              const { error } = await nuage.from("maquettes").delete().eq("id", f.id);
+              if (error) alerte(messageErreur(error));
+              await chargerDetails();
+            }
+            ouvrirPanneau();
+          }),
+        );
+        corps.append(
+          ligne(f.nom, `${taille(f.taille)} · effacée dans ${reste} jour${reste > 1 ? "s" : ""}`, actions),
+        );
+      }
     }
 
     corps.append(section("Personnes"));
@@ -408,8 +491,16 @@ function ouvrirPanneau(info = "") {
     corps.append(
       createur()
         ? bouton("lien danger", "Supprimer le projet", async () => {
-            if (!window.confirm(`Supprimer le projet « ${projet.nom} » et toutes ses maquettes ?`)) return;
-            if (etat.fichiers.length) await nuage.storage.from("maquettes").remove(etat.fichiers.map((f) => f.chemin));
+            const oui = await confirmer(
+              "Supprimer le projet ?",
+              `Le projet « ${projet.nom} », ses ${etat.fichiers.length + etat.corbeille.length} maquette(s), corbeille comprise, ` +
+                `et les accès des personnes invitées seront effacés tout de suite, sans corbeille ni retour possible.`,
+              "Supprimer le projet",
+              true,
+            );
+            if (!oui) return ouvrirPanneau();
+            const chemins = [...etat.fichiers, ...etat.corbeille].map((f) => f.chemin);
+            if (chemins.length) await nuage.storage.from("maquettes").remove(chemins);
             const { error } = await nuage.from("projets").delete().eq("id", projet.id);
             if (error) return alerte(messageErreur(error));
             fermer();
@@ -417,7 +508,12 @@ function ouvrirPanneau(info = "") {
             await ouvrirProjet(etat.projets[0] ?? null);
           })
         : bouton("lien danger", "Quitter ce projet", async () => {
-            if (!window.confirm(`Quitter le projet « ${projet.nom} » ?`)) return;
+            const oui = await confirmer(
+              "Quitter le projet ?",
+              `Vous ne verrez plus les maquettes de « ${projet.nom} ». Le créateur pourra vous inviter à nouveau.`,
+              "Quitter",
+            );
+            if (!oui) return ouvrirPanneau();
             await nuage.from("membres").delete().eq("projet_id", projet.id).eq("utilisateur_id", etat.moi.id);
             fermer();
             await chargerProjets();

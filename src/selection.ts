@@ -20,7 +20,7 @@ import {
   type Ids,
 } from "./apparence";
 import { definirSelectionMultiple, elementCourant, fermerFiche, selectionMultiple } from "./fiche";
-import { demandeMenu, demandeRemarque } from "./evenements";
+import { demandeMenu, demandeRemarque, demandeSimilaires } from "./evenements";
 import { indexDeTout } from "./index-elements";
 import { libelleCategorie } from "./libelles";
 import { enregistrerOutil, marquerOutil } from "./outils/panneau";
@@ -77,6 +77,12 @@ function dessiner() {
       cree("span", "compte", pluriel(n, "élément")),
       bouton("puce", "Masquer", () => void masquerSelection(), "Masquer la sélection (H ou Suppr)"),
       bouton("puce", isolementActif() ? "Tout voir" : "Isoler", () => void isolerSelection(), "Isoler la sélection (I)"),
+      bouton(
+        "puce",
+        "Similaires",
+        () => demandeSimilaires.emit({ ids: selectionIds(), critere: "categorie" }),
+        "Sélectionner tous les éléments de la même catégorie (clic droit : par type ou niveau)",
+      ),
       bouton(
         "puce",
         "Couleur",

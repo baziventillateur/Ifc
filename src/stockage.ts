@@ -48,6 +48,15 @@ export async function lireTout<T>(magasin: Magasin): Promise<T[]> {
   }
 }
 
+export async function lire<T>(magasin: Magasin, cle: string): Promise<T | undefined> {
+  try {
+    return (await transaction(magasin, "readonly", (s) => s.get(cle))) as T | undefined;
+  } catch (e) {
+    console.warn("Lecture impossible", e);
+    return undefined;
+  }
+}
+
 export async function ecrire(magasin: Magasin, cle: string, valeur: unknown) {
   try {
     await transaction(magasin, "readwrite", (s) => s.put(valeur, cle));

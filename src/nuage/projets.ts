@@ -4,18 +4,31 @@ import { alerte, attente, bouton, cree, el } from "../noyau";
 import { maquettes as affichees } from "../registre";
 import {
   ajouterIfc,
+  bufferDe,
   chargementOccupe,
+  noterVersion,
   chargerExemple,
   exempleAffiche,
   ouvrirDepuisNuage,
   retirer,
 } from "../maquettes";
 import { adresseSite, MAQUETTES_MAX, nuage, OCTETS_MAX, OCTETS_MAX_ADMIN, taille } from "./client";
-import { envoyerMaquette } from "./envoi";
+import { compresser, decompresser, envoyerMaquette } from "./envoi";
 import { seDeconnecter } from "./compte";
 
 type Projet = { id: string; nom: string; proprietaire: string };
-type Fichier = { id: string; nom: string; chemin: string; taille: number; cree_le: string; supprime_le: string | null };
+type Fichier = {
+  id: string;
+  nom: string;
+  chemin: string;
+  taille: number;
+  cree_le: string;
+  supprime_le: string | null;
+  chemin_frag: string | null;
+  taille_frag: number | null;
+};
+/** Tous les fichiers d'une maquette dans le stockage (IFC et version convertie). */
+const cheminsDe = (f: Fichier) => [f.chemin, f.chemin_frag].filter((c): c is string => !!c);
 const CORBEILLE_JOURS = 60;
 type Personne = { utilisateur_id: string | null; email: string; prenom: string; role: string };
 
@@ -147,7 +160,7 @@ async function chargerDetails() {
   const [{ data: f }, { data: p }] = await Promise.all([
     nuage
       .from("maquettes")
-      .select("id, nom, chemin, taille, cree_le, supprime_le")
+      .select("id, nom, chemin, taille, cree_le, supprime_le, chemin_frag, taille_frag")
       .eq("projet_id", etat.courant.id)
       .order("cree_le"),
     nuage.rpc("personnes_du_projet", { p: etat.courant.id }),
@@ -172,16 +185,62 @@ async function ouvrirProjet(projet: Projet | null) {
     await ouvrirDepuisNuage(
       etat.fichiers.map((f) => ({
         nom: nomLocal(f.nom),
+        version: f.id,
         date: f.cree_le,
-        telecharger: async () => {
-          const { data, error } = await nuage.storage.from("maquettes").download(f.chemin);
-          if (error || !data) throw error ?? new Error("Téléchargement impossible");
-          return new File([data], f.nom);
+        frag: f.chemin_frag
+          ? async () => (await telechargerFichier(f.chemin_frag!)).arrayBuffer()
+          : undefined,
+        ifc: async () => {
+          const brut = await telechargerFichier(f.chemin);
+          return new File([f.chemin.endsWith(".gz") ? await decompresser(brut) : brut], f.nom);
         },
+        sansFrag: (ifc?: File) => mettreANiveau(f, ifc),
       })),
     );
   }
   majBandeau();
+}
+
+async function telechargerFichier(chemin: string) {
+  const { data, error } = await nuage.storage.from("maquettes").download(chemin);
+  if (error || !data) throw error ?? new Error("Téléchargement impossible");
+  return data;
+}
+
+/**
+ * Ancienne maquette sans version convertie dans le cloud : le créateur l'y envoie (et
+ * remplace l'IFC par sa version compressée), en arrière-plan. Les prochaines ouvertures,
+ * sur tous les appareils, se font sans conversion.
+ */
+async function mettreANiveau(f: Fichier, ifc?: File) {
+  if (!createur() || f.chemin_frag) return;
+  const local = nomLocal(f.nom);
+  const dossier = f.chemin.split("/")[0];
+  const base = `${dossier}/${crypto.randomUUID()}`;
+  const frag = await bufferDe(local);
+  const cheminFrag = `${base}.frag`;
+  if (await envoyerMaquette(cheminFrag, new Blob([frag]), () => {})) return;
+  const maj: { chemin_frag: string; taille_frag: number; chemin?: string } = {
+    chemin_frag: cheminFrag,
+    taille_frag: frag.byteLength,
+  };
+  const nouveaux = [cheminFrag];
+  if (ifc && !f.chemin.endsWith(".gz")) {
+    const cheminGz = `${base}.ifc.gz`;
+    if (!(await envoyerMaquette(cheminGz, await compresser(ifc), () => {}))) {
+      maj.chemin = cheminGz;
+      nouveaux.push(cheminGz);
+    }
+  }
+  const { error } = await nuage.from("maquettes").update(maj).eq("id", f.id);
+  if (error) {
+    console.error("Mise à niveau", error);
+    await nuage.storage.from("maquettes").remove(nouveaux);
+    return;
+  }
+  if (maj.chemin) await nuage.storage.from("maquettes").remove([f.chemin]);
+  Object.assign(f, maj);
+  alerte(`« ${local} » optimisée : elle s'ouvrira vite sur tous vos appareils.`);
 }
 
 export async function demarrerNuage(utilisateur: User) {
@@ -273,21 +332,43 @@ export async function deposer(fichiers: File[]) {
         refus.push(`« ${f.name} » n'a pas pu être lue (IFC illisible ou trop lourd pour ce navigateur)`);
         continue;
       }
-      const chemin = `${projet.id}/${crypto.randomUUID()}.ifc`;
+      // On envoie l'IFC compressé et sa version convertie, qui s'ouvrira sans conversion.
+      const base = `${projet.id}/${crypto.randomUUID()}`;
+      const chemin = `${base}.ifc.gz`;
+      const cheminFrag = `${base}.frag`;
+      attente(`Compression de « ${local} » (${taille(f.size)})…`, i / retenus.length);
+      const [gz, frag] = await Promise.all([compresser(f), bufferDe(local)]);
       const avance = (part: number) =>
         attente(
-          `Envoi de « ${local} » : ${Math.round(part * 100)} % de ${taille(f.size)}… Ne fermez pas la page.`,
+          `Envoi de « ${local} » : ${Math.round(part * 100)} % de ${taille(gz.size + frag.byteLength)} ` +
+            `(${taille(f.size)} avant compression)… Ne fermez pas la page.`,
           (i + part) / retenus.length,
         );
+      const partIfc = gz.size / (gz.size + frag.byteLength);
       avance(0);
-      let erreur: { message?: string; code?: string; statut?: number } | null = await envoyerMaquette(chemin, f, avance);
+      let erreur: { message?: string; code?: string; statut?: number } | null = await envoyerMaquette(
+        chemin,
+        gz,
+        (p) => avance(p * partIfc),
+      );
+      if (!erreur) erreur = await envoyerMaquette(cheminFrag, new Blob([frag]), (p) => avance(partIfc + p * (1 - partIfc)));
       if (!erreur) {
         const ligne = await nuage
           .from("maquettes")
-          .insert({ projet_id: projet.id, nom: f.name, chemin, taille: f.size });
+          .insert({
+            projet_id: projet.id,
+            nom: f.name,
+            chemin,
+            taille: f.size,
+            chemin_frag: cheminFrag,
+            taille_frag: frag.byteLength,
+          })
+          .select("id")
+          .single();
         erreur = ligne.error;
-        if (erreur) await nuage.storage.from("maquettes").remove([chemin]);
+        if (!erreur && ligne.data) await noterVersion(local, ligne.data.id);
       }
+      if (erreur) await nuage.storage.from("maquettes").remove([chemin, cheminFrag]);
       if (erreur) {
         console.error(erreur);
         refus.push(`« ${f.name} » : ${messageErreur(erreur)}`);
@@ -477,7 +558,7 @@ function ouvrirPanneau(info = "") {
               true,
             );
             if (oui) {
-              await nuage.storage.from("maquettes").remove([f.chemin]);
+              await nuage.storage.from("maquettes").remove(cheminsDe(f));
               const { error } = await nuage.from("maquettes").delete().eq("id", f.id);
               if (error) alerte(messageErreur(error));
               await chargerDetails();
@@ -524,7 +605,7 @@ function ouvrirPanneau(info = "") {
               true,
             );
             if (!oui) return ouvrirPanneau();
-            const chemins = [...etat.fichiers, ...etat.corbeille].map((f) => f.chemin);
+            const chemins = [...etat.fichiers, ...etat.corbeille].flatMap(cheminsDe);
             if (chemins.length) await nuage.storage.from("maquettes").remove(chemins);
             const { error } = await nuage.from("projets").delete().eq("id", projet.id);
             if (error) return alerte(messageErreur(error));

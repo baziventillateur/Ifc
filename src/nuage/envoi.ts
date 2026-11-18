@@ -7,7 +7,17 @@ import { CLE_PUBLIQUE, nuage, URL_NUAGE } from "./client";
 const MORCEAU = 6 * 1024 * 1024;
 export type ErreurEnvoi = { message: string; statut?: number };
 
-function envoiParMorceaux(chemin: string, f: File, jeton: string, progression: (part: number) => void) {
+/** Compresse un fichier (gzip, dans le navigateur) : un IFC, texte, pèse 5 à 10 fois moins. */
+export function compresser(f: Blob) {
+  return new Response(f.stream().pipeThrough(new CompressionStream("gzip"))).blob();
+}
+
+/** Décompresse un fichier gzip. */
+export function decompresser(b: Blob) {
+  return new Response(b.stream().pipeThrough(new DecompressionStream("gzip"))).blob();
+}
+
+function envoiParMorceaux(chemin: string, f: Blob, jeton: string, progression: (part: number) => void) {
   return new Promise<void>((ok, echec) => {
     const envoi = new tus.Upload(f, {
       endpoint: `${URL_NUAGE}/storage/v1/upload/resumable`,
@@ -43,7 +53,7 @@ const tropLourd = (e: ErreurEnvoi) =>
 /** Envoie le fichier au chemin donné ; renvoie null si tout va bien, sinon l'erreur. */
 export async function envoyerMaquette(
   chemin: string,
-  f: File,
+  f: Blob,
   progression: (part: number) => void,
 ): Promise<ErreurEnvoi | null> {
   if (f.size > MORCEAU) {

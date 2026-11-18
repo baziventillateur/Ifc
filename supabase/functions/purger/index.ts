@@ -14,7 +14,7 @@ Deno.serve(async () => {
   const limite = new Date(Date.now() - JOURS * 86_400_000).toISOString();
   const { data, error } = await service
     .from("maquettes")
-    .select("id, chemin")
+    .select("id, chemin, chemin_frag")
     .not("supprime_le", "is", null)
     .lt("supprime_le", limite)
     .limit(PAQUET);
@@ -24,7 +24,8 @@ Deno.serve(async () => {
   }
   const liste = data ?? [];
   if (liste.length) {
-    const { error: errFichiers } = await service.storage.from("maquettes").remove(liste.map((m) => m.chemin));
+    const chemins = liste.flatMap((m) => [m.chemin, m.chemin_frag].filter(Boolean) as string[]);
+    const { error: errFichiers } = await service.storage.from("maquettes").remove(chemins);
     if (errFichiers) {
       console.error("fichiers", errFichiers);
       return new Response(JSON.stringify({ erreur: "FICHIERS" }), { status: 500 });

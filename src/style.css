@@ -2045,3 +2045,46 @@ body.selection-active .bandeau {
   padding: 2px 6px;
   font-size: 11px;
 }
+
+/* Fenêtre de confirmation de l'appli */
+.dialogue-fond {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(8, 11, 15, 0.55);
+}
+
+.dialogue {
+  width: min(340px, 100%);
+  padding: 14px 16px 12px;
+  border: 1px solid var(--bord);
+  border-radius: 10px;
+  background: var(--panneau-plein);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.dialogue-titre {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.dialogue-texte {
+  margin: 6px 0 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #c3cbd6;
+  overflow-wrap: anywhere;
+}
+
+.dialogue-pied {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.icone.eteint {
+  opacity: 0.55;
+}

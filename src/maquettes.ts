@@ -28,7 +28,7 @@ import {
 import { appliquerApparence, appliquerVisibilite, oublierMaquette } from "./apparence";
 import { fermerFiche } from "./fiche";
 import { oublierIndex } from "./index-elements";
-import { demanderPersistance, ecrire, effacer, lireTout } from "./stockage";
+import { demanderPersistance, ecrire, effacer, lire, lireTout } from "./stockage";
 
 const MODELES_EXEMPLE = [
   { id: "Architecture", fichier: "modeles/ecole_architecture.frag" },
@@ -140,14 +140,14 @@ function dessinerCalques() {
         ),
       );
     }
+    // Masquer seulement : la suppression d'une maquette se fait dans « Projet » (corbeille).
+    const visible = m.modele.object.visible;
     rang.append(
       boutonIcone(
-        "retirer",
-        () => {
-          if (!m.exemple && !window.confirm(`Retirer la maquette « ${m.id} » ?`)) return;
-          void retirer(m.id);
-        },
-        `Retirer « ${m.id} »`,
+        visible ? "oeil" : "oeilBarre",
+        () => void changerVisibilite([[m, !visible]]),
+        visible ? `Masquer « ${m.id} »` : `Afficher « ${m.id} »`,
+        "icone" + (visible ? "" : " eteint"),
       ),
     );
     calquesListe.append(rang);
@@ -185,10 +185,9 @@ el("btn-tout-afficher").addEventListener("click", () =>
   void changerVisibilite([...maquettes.values()].map((m) => [m, true])),
 );
 
-el("btn-tout-retirer").addEventListener("click", async () => {
-  if (!exempleAffiche() && !window.confirm("Retirer toutes les maquettes ?")) return;
-  await vider();
-});
+el("btn-tout-retirer").addEventListener("click", () =>
+  void changerVisibilite([...maquettes.values()].map((m) => [m, false])),
+);
 
 // --- Vue ------------------------------------------------------------------------------
 
@@ -311,7 +310,21 @@ function idUnique(nom: string) {
   return `${nom} (${i})`;
 }
 
-type Enregistrement = { id: string; ordre: number; date: string; donnees: ArrayBuffer };
+/** Copie convertie gardée sur l'appareil ; « version » = identifiant de la maquette dans le cloud. */
+type Enregistrement = { id: string; ordre: number; date: string; version?: string; donnees: ArrayBuffer };
+
+/** Version convertie (.frag) d'une maquette affichée, prête à être envoyée ou gardée. */
+export async function bufferDe(id: string) {
+  const m = maquettes.get(id);
+  if (!m) throw new Error(`Maquette absente : ${id}`);
+  return m.modele.getBuffer(false);
+}
+
+/** Rattache la copie de l'appareil à sa maquette du cloud (elle sera reconnue à coup sûr). */
+export async function noterVersion(id: string, version: string) {
+  const e = await lire<Enregistrement>("maquettes", id);
+  if (e && e.version !== version) await ecrire("maquettes", id, { ...e, version });
+}
 
 /** Garde la maquette convertie sur l'appareil, pour la rouvrir sans reconversion. */
 async function memoriser(id: string) {
@@ -390,11 +403,26 @@ export async function ajouterIfc(fichiers: File[]): Promise<string[]> {
   return ajoutees;
 }
 
-export type MaquetteNuage = { nom: string; date: string; telecharger: () => Promise<File> };
+export type MaquetteNuage = {
+  /** Nom affiché (identifiant local de la maquette). */
+  nom: string;
+  /** Identifiant de la maquette dans le cloud : une copie de cette version est à jour. */
+  version: string;
+  /** Date de dépôt, pour reconnaître les copies gardées avant les versions. */
+  date: string;
+  /** Version convertie (.frag) dans le cloud, si elle existe. */
+  frag?: () => Promise<ArrayBuffer>;
+  /** Fichier IFC d'origine, en dernier recours. */
+  ifc: () => Promise<File>;
+  /** Appelé quand la maquette a dû être convertie ici (mise à niveau dans le cloud). */
+  sansFrag?: (ifc?: File) => Promise<void>;
+};
 
 /**
- * Affiche les maquettes d'un projet du cloud. Celles déjà converties sur cet appareil
- * sont rouvertes directement ; les autres sont téléchargées puis converties.
+ * Affiche les maquettes d'un projet du cloud, de la plus rapide à la plus lente :
+ * 1. copie déjà sur l'appareil (aucun téléchargement) ;
+ * 2. version convertie gardée dans le cloud (légère, ouverte sans conversion) ;
+ * 3. fichier IFC, converti ici en dernier recours (anciennes maquettes).
  */
 export async function ouvrirDepuisNuage(liste: MaquetteNuage[]) {
   await vider(true);
@@ -402,33 +430,98 @@ export async function ouvrirDepuisNuage(liste: MaquetteNuage[]) {
   const noms = new Set(liste.map((l) => l.nom));
   for (const e of cache) if (!noms.has(e.id)) await effacer("maquettes", e.id);
 
-  const aConvertir: File[] = [];
+  const total = liste.length;
+  let ouvertes = 0;
   let echecs = 0;
+  const aConvertir: MaquetteNuage[] = [];
+  const aCompleter: MaquetteNuage[] = [];
   try {
-    for (const [i, l] of liste.entries()) {
-      const garde = cache.find((c) => c.id === l.nom && Date.parse(c.date) >= Date.parse(l.date));
-      if (garde) {
-        attente(`Ouverture de « ${l.nom} »…`, i / liste.length);
-        try {
-          await fragments.core.load(garde.donnees, { modelId: garde.id });
-          continue;
-        } catch (err) {
-          console.error(err);
-        }
+    // 1. Copies de l'appareil.
+    const reste: MaquetteNuage[] = [];
+    for (const l of liste) {
+      const garde = cache.find(
+        (c) =>
+          c.id === l.nom &&
+          (c.version === l.version || (!c.version && Date.parse(c.date) >= Date.parse(l.date))),
+      );
+      if (!garde) {
+        reste.push(l);
+        continue;
       }
-      attente(`Téléchargement de « ${l.nom} »…`, i / liste.length);
+      attente(`Ouverture de « ${l.nom} »…`, ouvertes / total);
       try {
-        aConvertir.push(await l.telecharger());
+        await fragments.core.load(garde.donnees, { modelId: l.nom });
+        ouvertes += 1;
+        if (garde.version !== l.version) await noterVersion(l.nom, l.version);
+        if (!l.frag) aCompleter.push(l);
       } catch (err) {
         console.error(err);
-        echecs += 1;
+        reste.push(l);
+      }
+    }
+
+    // 2. Versions converties du cloud : téléchargées en même temps, ouvertes à l'arrivée.
+    const avecFrag = reste.filter((l) => l.frag);
+    aConvertir.push(...reste.filter((l) => !l.frag));
+    if (avecFrag.length) attente(`Téléchargement de ${avecFrag.length} maquette(s)…`, ouvertes / total);
+    const arrivees = avecFrag.map(async (l) => {
+      try {
+        return { l, donnees: await l.frag!() };
+      } catch (err) {
+        console.error(err);
+        return { l, donnees: null };
+      }
+    });
+    for (const arrivee of arrivees) {
+      const { l, donnees } = await arrivee;
+      if (!donnees) {
+        aConvertir.push(l);
+        continue;
+      }
+      attente(`Ouverture de « ${l.nom} »…`, ouvertes / total);
+      try {
+        // Copie gardée avant l'ouverture : le moteur reprend le fichier pour lui en l'ouvrant.
+        const copie: Enregistrement = {
+          id: l.nom,
+          ordre: liste.indexOf(l),
+          date: new Date().toISOString(),
+          version: l.version,
+          donnees,
+        };
+        demanderPersistance();
+        if (!(await ecrire("maquettes", l.nom, copie))) console.warn("Copie non gardée", l.nom);
+        await fragments.core.load(donnees, { modelId: l.nom });
+        ouvertes += 1;
+      } catch (err) {
+        console.error(err);
+        aConvertir.push(l);
       }
     }
     if (maquettes.size > 0) await apresChargement();
   } finally {
     attente(null);
   }
-  if (aConvertir.length > 0) await ajouterIfc(aConvertir);
+
+  // 3. Dernier recours : l'IFC, converti ici.
+  for (const l of aConvertir) {
+    let fichier: File;
+    try {
+      attente(`Téléchargement de « ${l.nom} » (fichier d'origine)…`, 0.05);
+      fichier = await l.ifc();
+    } catch (err) {
+      console.error(err);
+      echecs += 1;
+      attente(null);
+      continue;
+    }
+    const ids = await ajouterIfc([fichier]);
+    if (ids.includes(l.nom)) {
+      await noterVersion(l.nom, l.version);
+      if (l.sansFrag) void l.sansFrag(fichier).catch((err) => console.error("Mise à niveau", err));
+    }
+  }
+  // Copies d'appareil d'anciennes maquettes : on envoie leur version convertie au cloud.
+  for (const l of aCompleter) if (l.sansFrag) void l.sansFrag().catch((err) => console.error("Mise à niveau", err));
   if (echecs > 0) alerte(`${echecs} maquette(s) n'ont pas pu être téléchargées.`);
 }
 

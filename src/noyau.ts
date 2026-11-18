@@ -249,6 +249,9 @@ const ICONES: Record<string, string> = {
     '<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11" /><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/>',
   isoler: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/>',
   retirer: '<path d="M4 4l8 8M12 4l-8 8"/>',
+  oeil: '<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="1.8" fill="currentColor" stroke="none"/>',
+  oeilBarre:
+    '<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z" opacity=".45"/><path d="M2.5 13.5l11-11"/>',
   precedent: '<path d="M10 3.5L5.5 8l4.5 4.5"/>',
   suivant: '<path d="M6 3.5l4.5 4.5L6 12.5"/>',
 };
@@ -268,6 +271,37 @@ export function icone(nom: keyof typeof ICONES | string) {
 }
 
 /** Bouton icône accessible. */
+/** Fenêtre de confirmation de l'appli (à la place de celle du navigateur). */
+export function demanderConfirmation(titre: string, texte: string, action: string, danger = false) {
+  return new Promise<boolean>((ok) => {
+    const fond = cree("div", "dialogue-fond");
+    const boite = cree("div", "dialogue");
+    boite.setAttribute("role", "alertdialog");
+    const fin = (v: boolean) => {
+      fond.remove();
+      window.removeEventListener("keydown", clavier, true);
+      ok(v);
+    };
+    const clavier = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopImmediatePropagation();
+        fin(false);
+      }
+    };
+    const pied = cree("div", "dialogue-pied");
+    const valider = bouton(danger ? "btn danger" : "btn principal", action, () => fin(true));
+    pied.append(bouton("btn", "Annuler", () => fin(false)), valider);
+    boite.append(cree("div", "dialogue-titre", titre), cree("p", "dialogue-texte", texte), pied);
+    fond.append(boite);
+    fond.addEventListener("pointerdown", (e) => {
+      if (e.target === fond) fin(false);
+    });
+    window.addEventListener("keydown", clavier, true);
+    document.body.append(fond);
+    valider.focus();
+  });
+}
+
 export function boutonIcone(nom: string, action: () => void, titre: string, classe = "icone") {
   const b = bouton(classe, "", action, titre);
   b.append(icone(nom));

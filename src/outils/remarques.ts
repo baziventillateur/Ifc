@@ -11,6 +11,7 @@ import {
   directionDepuisIfc,
   directionVersIfc,
   monde,
+  demanderConfirmation,
   recentrerPivot,
   telecharger,
   versIfc,
@@ -433,7 +434,13 @@ enregistrerOutil("remarques", "Remarques", "Remarques (BCF)", (section) => {
             }),
             bouton("puce", "Revoir la vue", () => void allerA(r)),
             bouton("puce danger", "Supprimer", async () => {
-              if (!window.confirm(`Supprimer la remarque « ${r.titre} » ?`)) return;
+              const oui = await demanderConfirmation(
+                "Supprimer la remarque ?",
+                `« ${r.titre} » sera effacée de cet appareil.`,
+                "Supprimer",
+                true,
+              );
+              if (!oui) return;
               remarques.delete(r.guid);
               await effacer("remarques", r.guid);
               ouverte = null;

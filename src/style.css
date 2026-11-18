@@ -1593,3 +1593,28 @@ body.selection-active .bandeau {
 .signature:hover {
   color: var(--texte);
 }
+
+/* Signature de marque dans la barre du haut : nom, et « par PaceApp » dessous en petit. */
+.griffe {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1;
+  color: inherit;
+  text-decoration: none;
+}
+
+.griffe .titre {
+  line-height: 1.05;
+}
+
+.griffe-par {
+  margin-top: 2px;
+  font-size: 7.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--doux);
+  white-space: nowrap;
+}

@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: publication
@@ -34,3 +36,15 @@ jobs:
           git add -A
           git commit -m "Publication du site"
           git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+      # Publication directe par GitHub Pages (réglage Pages > Source : « GitHub Actions »).
+      # La branche gh-pages ci-dessus reste alimentée pour l'ancien réglage.
+      - name: Retirer le dépôt git temporaire de dist/
+        run: rm -rf dist/.git
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - name: Déployer sur GitHub Pages
+        id: pages
+        continue-on-error: true
+        uses: actions/deploy-pages@v4

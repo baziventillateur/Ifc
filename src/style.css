@@ -2202,3 +2202,65 @@ body.selection-active .bandeau {
 .mesure-actions:empty {
   display: none;
 }
+
+/* Coupe sur une face : poignée ciseaux et axe de déplacement */
+.poignee-coupe {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #ff8a1f;
+  color: #1a1206;
+  font-size: 15px;
+  line-height: 1;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.poignee-coupe.prise {
+  cursor: grabbing;
+  transform-origin: center;
+  background: #ffb15f;
+}
+
+.poignee-coupe[hidden],
+.valeur-poignee[hidden] {
+  display: none;
+}
+
+.valeur-poignee {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(15, 19, 24, 0.85);
+  color: #ffd2a6;
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.axe-coupe {
+  stroke: #ff8a1f;
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  opacity: 0.9;
+}
+
+.coupe-face {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

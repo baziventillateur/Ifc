@@ -1,6 +1,9 @@
-// Plans de coupe : horizontal (par niveau) et vertical (selon X ou Y).
+// Plans de coupe : horizontal (par niveau), vertical (selon X ou Y), et sur une face :
+// on touche une surface, le plan s'aligne sur elle, puis la poignée « ciseaux » le
+// déplace perpendiculairement à la face.
 import * as THREE from "three";
-import { bouton, cree, monde, nombre, rafraichir, versIfc } from "../noyau";
+import { alerte, bouton, cree, el, lanceur, monde, nombre, rafraichir, versIfc } from "../noyau";
+import { definirModeClic } from "../fiche";
 import { changement, visibles } from "../registre";
 import { indexDeTout } from "../index-elements";
 import { enregistrerOutil, marquerOutil } from "./panneau";
@@ -19,6 +22,121 @@ function bornes() {
   return b;
 }
 
+// --- Coupe sur une face -----------------------------------------------------------------
+
+const planF = new THREE.Plane();
+const face = {
+  actif: false,
+  /** Point de la face touchée et normale tournée vers la partie gardée. */
+  origine: new THREE.Vector3(),
+  normale: new THREE.Vector3(0, 0, 1),
+  decalage: 0,
+};
+let majFace: () => void = () => {};
+
+const calque = el("etiquettes");
+const poignee = cree("button", "poignee-coupe", "✂");
+poignee.type = "button";
+poignee.title = "Glisser pour déplacer la coupe";
+poignee.hidden = true;
+const valeurPoignee = cree("span", "valeur-poignee", "");
+valeurPoignee.hidden = true;
+const SVG = "http://www.w3.org/2000/svg";
+const axePoignee = document.createElementNS(SVG, "svg");
+axePoignee.classList.add("dessin-cotes");
+const traitAxe = document.createElementNS(SVG, "line");
+traitAxe.setAttribute("class", "axe-coupe");
+axePoignee.append(traitAxe);
+calque.append(axePoignee, poignee, valeurPoignee);
+
+const ancre = () => face.origine.clone().addScaledVector(face.normale, face.decalage);
+
+function ecran(p: THREE.Vector3) {
+  const v = p.clone().project(monde.camera.three);
+  if (v.z > 1 || v.z < -1) return null;
+  const r = monde.renderer!.three.domElement.getBoundingClientRect();
+  return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height };
+}
+
+/** Direction de la normale à l'écran (vecteur unitaire) et pixels par mètre. */
+function directionEcran() {
+  const a = ancre();
+  const p0 = ecran(a);
+  const p1 = ecran(a.clone().add(face.normale));
+  if (!p0 || !p1) return null;
+  const dx = p1.x - p0.x;
+  const dy = p1.y - p0.y;
+  const ppm = Math.hypot(dx, dy);
+  if (ppm < 1e-3) return null;
+  return { p0, ux: dx / ppm, uy: dy / ppm, ppm };
+}
+
+function placerPoignee() {
+  const d = face.actif ? directionEcran() : null;
+  poignee.hidden = !d;
+  valeurPoignee.hidden = !d;
+  axePoignee.style.display = d ? "" : "none";
+  if (!d) return;
+  poignee.style.transform = `translate(${d.p0.x}px, ${d.p0.y}px) translate(-50%, -50%)`;
+  valeurPoignee.style.transform = `translate(${d.p0.x + 20}px, ${d.p0.y - 26}px)`;
+  valeurPoignee.textContent = `${face.decalage >= 0 ? "+" : ""}${nombre(face.decalage)} m`;
+  const l = 70;
+  traitAxe.setAttribute("x1", String(d.p0.x - d.ux * l));
+  traitAxe.setAttribute("y1", String(d.p0.y - d.uy * l));
+  traitAxe.setAttribute("x2", String(d.p0.x + d.ux * l));
+  traitAxe.setAttribute("y2", String(d.p0.y + d.uy * l));
+}
+monde.renderer!.onAfterUpdate.add(placerPoignee);
+
+// Glisser la poignée : le plan avance le long de sa normale (trajectoire perpendiculaire à la face).
+let glisse: { x: number; y: number; depart: number; ux: number; uy: number; ppm: number } | null = null;
+poignee.addEventListener("pointerdown", (e) => {
+  const d = directionEcran();
+  if (!d) return;
+  e.preventDefault();
+  e.stopPropagation();
+  poignee.setPointerCapture(e.pointerId);
+  glisse = { x: e.clientX, y: e.clientY, depart: face.decalage, ux: d.ux, uy: d.uy, ppm: d.ppm };
+  poignee.classList.add("prise");
+});
+poignee.addEventListener("pointermove", (e) => {
+  if (!glisse) return;
+  const t = ((e.clientX - glisse.x) * glisse.ux + (e.clientY - glisse.y) * glisse.uy) / glisse.ppm;
+  face.decalage = Math.round((glisse.depart + t) * 100) / 100;
+  void appliquer();
+});
+const lacher = () => {
+  glisse = null;
+  poignee.classList.remove("prise");
+  majFace();
+};
+poignee.addEventListener("pointerup", lacher);
+poignee.addEventListener("pointercancel", lacher);
+
+async function choisirFace(e: PointerEvent) {
+  const r = monde.renderer!.three.domElement.getBoundingClientRect();
+  const position = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  const hit: any = await lanceur.castRay({ position, items: [] } as any);
+  definirModeClic(null);
+  if (!hit?.point) {
+    alerte("Touchez une surface de la maquette.", 2500);
+    majFace();
+    return;
+  }
+  const point = hit.point.clone() as THREE.Vector3;
+  let n: THREE.Vector3 | null = hit.normal ? (hit.normal.clone() as THREE.Vector3).normalize() : null;
+  if (!n || n.lengthSq() < 0.5) n = monde.camera.three.getWorldDirection(new THREE.Vector3()).negate();
+  // La normale de la face regarde la caméra : on garde ce qui est derrière la face.
+  const versCamera = monde.camera.three.position.clone().sub(point);
+  if (n.dot(versCamera) < 0) n.negate();
+  face.origine.copy(point);
+  face.normale.copy(n).negate();
+  face.decalage = 0;
+  face.actif = true;
+  await appliquer();
+  majFace();
+}
+
 async function appliquer() {
   planH.constant = etat.h.y;
   if (etat.v.axe === "x") {
@@ -29,16 +147,21 @@ async function appliquer() {
     planV.normal.set(0, 0, etat.v.inverse ? -1 : 1);
     planV.constant = etat.v.inverse ? etat.v.pos : -etat.v.pos;
   }
+  planF.setFromNormalAndCoplanarPoint(face.normale, ancre());
   monde.renderer!.setPlane(etat.h.actif, planH);
   monde.renderer!.setPlane(etat.v.actif, planV);
-  marquerOutil("coupe", etat.h.actif || etat.v.actif);
+  monde.renderer!.setPlane(face.actif, planF);
+  marquerOutil("coupe", etat.h.actif || etat.v.actif || face.actif);
+  placerPoignee();
   await rafraichir();
 }
 
 export function retirerCoupes() {
   etat.h.actif = false;
   etat.v.actif = false;
+  face.actif = false;
   void appliquer();
+  majFace();
 }
 
 enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
@@ -98,6 +221,51 @@ enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
   });
   axes.racine.append(inverser);
 
+  // --- Sur une face
+  const zoneFace = cree("div", "coupe-face");
+  majFace = () => {
+    zoneFace.replaceChildren();
+    if (face.actif) {
+      zoneFace.append(
+        note(`Coupe alignée sur la face, décalée de ${nombre(face.decalage)} m. Glissez les ciseaux ✂ pour la déplacer.`),
+      );
+      const rang = cree("div", "puces");
+      rang.append(
+        bouton("puce", "Autre face", () => {
+          definirModeClic(choisirFace);
+          alerte("Touchez la surface sur laquelle aligner la coupe.", 4000);
+        }),
+        bouton("puce", "Garder l'autre côté", () => {
+          face.origine.copy(ancre());
+          face.decalage = 0;
+          face.normale.negate();
+          void appliquer();
+          majFace();
+        }),
+        bouton("puce", "Remettre sur la face", () => {
+          face.decalage = 0;
+          void appliquer();
+          majFace();
+        }),
+        bouton("puce danger", "Retirer", () => {
+          face.actif = false;
+          void appliquer();
+          majFace();
+        }),
+      );
+      zoneFace.append(rang);
+    } else {
+      zoneFace.append(
+        bouton("btn principal", "Couper sur une face", () => {
+          definirModeClic(choisirFace);
+          alerte("Touchez la surface sur laquelle aligner la coupe.", 4000);
+        }),
+        note("Touchez un mur, une dalle ou une face inclinée : la coupe s'aligne dessus."),
+      );
+    }
+  };
+  majFace();
+
   const toutRetirer = bouton("btn", "Retirer les coupes", () => {
     h.input.checked = false;
     v.input.checked = false;
@@ -105,6 +273,8 @@ enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
   });
 
   section.append(
+    titreSection("Sur une face"),
+    zoneFace,
     h.racine,
     hauteur.racine,
     titreSection("Couper au niveau"),
@@ -187,6 +357,8 @@ enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
     ouvrir: () => {
       regler();
       void chargerNiveaux();
+      majFace();
     },
+    fermer: () => definirModeClic(null),
   };
 });

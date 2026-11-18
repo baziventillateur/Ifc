@@ -1960,3 +1960,52 @@ body.selection-active .bandeau {
   background: rgba(255, 138, 31, 0.14);
   color: var(--accent);
 }
+
+/* Assistant IA : essai et accès */
+.ia-statut {
+  margin: 0 0 4px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ia-statut.alerte-ia {
+  color: var(--accent);
+  background: rgba(255, 138, 31, 0.1);
+}
+
+.admin-ia {
+  white-space: nowrap;
+}
+
+.admin-ia span {
+  margin-right: 6px;
+}
+
+.admin-ia .puce,
+.admin-ia .lien {
+  padding: 1px 7px;
+  font-size: 11px;
+}
+
+.admin-table tr.demande-ia td {
+  background: rgba(255, 138, 31, 0.08);
+}
+
+/* Pivot de rotation sous le doigt */
+.repere-pivot {
+  position: fixed;
+  z-index: 20;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  pointer-events: none;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+
+.repere-pivot[hidden] {
+  display: none;
+}

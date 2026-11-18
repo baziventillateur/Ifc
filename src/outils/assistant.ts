@@ -1,5 +1,6 @@
 // Assistant IA (Claude) : questions en français sur les maquettes chargées.
-// La clé API reste dans ce navigateur. Les fichiers IFC ne sont jamais envoyés :
+// Les appels passent par la fonction serveur « ia » de NexBim, qui garde la clé et
+// compte l'essai (3 questions par compte). Les fichiers IFC ne sont jamais envoyés :
 // Claude appelle des outils qui s'exécutent ici, et ne reçoit que leurs réponses
 // (noms d'éléments, nombres, quantités).
 import { alerte, bouton, cadrer, cree } from "../noyau";
@@ -10,13 +11,20 @@ import { indexDeTout, SANS_NIVEAU } from "../index-elements";
 import { lister, quantifier, tousLesElements, versIds, type Filtre, type Regroupement } from "../requetes";
 import { detecterPourAssistant, nomElement } from "./clashs";
 import { enregistrerOutil } from "./panneau";
-import { note, selecteur } from "./ui";
+import { nuage } from "../nuage/client";
+import { note } from "./ui";
 
-const API = "https://api.anthropic.com/v1/messages";
-const MODELES = [
-  { valeur: "claude-sonnet-5-5", libelle: "Claude Sonnet 5.5 (recommandé)" },
-  { valeur: "claude-haiku-5-5", libelle: "Claude Haiku 5.5 (rapide, économique)" },
-];
+const MODELE = "claude-sonnet-5-5";
+type EtatIA = { admin: boolean; actif: boolean; questions: number; essai: number; demande: boolean };
+
+/** Appelle la fonction serveur « ia » ; renvoie le corps JSON même en cas de refus. */
+async function fonctionIA(corps: Record<string, unknown>) {
+  const { data, error } = await nuage.functions.invoke("ia", { body: corps });
+  if (!error) return { ok: true, data };
+  const contexte = (error as { context?: Response }).context;
+  const detail = contexte ? await contexte.json().catch(() => null) : null;
+  return { ok: false, data: detail ?? { erreur: "RESEAU" } };
+}
 
 const SUGGESTIONS = [
   "Quel volume de béton pour les voiles ?",
@@ -241,52 +249,21 @@ const LIBELLES_OUTILS: Record<string, string> = {
 };
 
 enregistrerOutil("assistant", "IA", "Assistant IA", (section) => {
-  const lire = (k: string) => {
+  // L'ancienne clé saisie à la main n'est plus utilisée : on l'efface de l'appareil.
+  const oublierAncienneCle = () => {
     try {
-      return localStorage.getItem(k) ?? "";
+      localStorage.removeItem("visio-cle-claude");
+      localStorage.removeItem("visio-modele-claude");
     } catch {
-      return "";
+      // Pas de mémoire locale.
     }
   };
-  const garder = (k: string, v: string) => {
-    try {
-      if (v) localStorage.setItem(k, v);
-      else localStorage.removeItem(k);
-    } catch {
-      // Pas de mémoire locale : réglage valable pour la session.
-    }
-  };
-  let cle = lire("visio-cle-claude");
-  let modele = lire("visio-modele-claude") || MODELES[0].valeur;
+  oublierAncienneCle();
+  let etatIA: EtatIA | null = null;
   let messages: any[] = [];
   let occupe = false;
 
-  // --- Réglages
-  const reglages = cree("details", "reglages");
-  const resume = cree("summary", "", "Clé API et modèle");
-  const champCle = cree("input", "champ");
-  champCle.type = "password";
-  champCle.autocomplete = "off";
-  champCle.placeholder = "sk-ant-…";
-  champCle.value = cle;
-  champCle.addEventListener("change", () => {
-    cle = champCle.value.trim();
-    garder("visio-cle-claude", cle);
-    majEtat();
-  });
-  const choixModele = selecteur(MODELES, modele, (v) => {
-    modele = v;
-    garder("visio-modele-claude", v);
-  });
-  reglages.append(
-    resume,
-    cree("span", "petit", "Clé API Anthropic (console.anthropic.com)"),
-    champCle,
-    choixModele,
-    note(
-      "La clé reste dans ce navigateur. Les fichiers IFC ne sont pas envoyés : seules vos questions et les réponses des outils (noms d'éléments, quantités) partent chez Anthropic.",
-    ),
-  );
+  const statut = cree("p", "note ia-statut", "");
 
   const fil = cree("div", "fil");
   const suggestions = cree("div", "puces");
@@ -316,13 +293,41 @@ enregistrerOutil("assistant", "IA", "Assistant IA", (section) => {
     void retirerCouche("ia");
   });
 
-  section.append(reglages, fil, suggestions, formulaire, nouvelle);
+  section.append(
+    statut,
+    fil,
+    suggestions,
+    formulaire,
+    nouvelle,
+    note("Les fichiers IFC ne quittent pas votre appareil : seules vos questions et les réponses des outils (noms d'éléments, quantités) sont envoyées à Claude."),
+  );
+
+  const bloque = () => !!etatIA && !etatIA.actif && etatIA.questions >= etatIA.essai;
 
   function majEtat() {
-    reglages.open = !cle;
-    envoi.disabled = occupe || !cle;
+    envoi.disabled = occupe || bloque();
+    champ.disabled = bloque();
+    if (!etatIA) {
+      statut.textContent = "";
+      return;
+    }
+    if (etatIA.admin) statut.textContent = "Accès administrateur : illimité.";
+    else if (etatIA.actif) statut.textContent = "Assistant IA activé pour votre compte.";
+    else if (bloque())
+      statut.textContent = "Essai terminé : votre demande d'accès a été envoyée à l'administrateur.";
+    else {
+      const reste = etatIA.essai - etatIA.questions;
+      statut.textContent = `Essai gratuit : ${reste} question${reste > 1 ? "s" : ""} restante${reste > 1 ? "s" : ""}.`;
+    }
+    statut.classList.toggle("alerte-ia", bloque());
   }
   majEtat();
+
+  async function chargerEtat() {
+    const r = await fonctionIA({ action: "etat" });
+    if (r.ok) etatIA = r.data as EtatIA;
+    majEtat();
+  }
 
   function bulle(classe: string, contenu: HTMLElement | string) {
     const b = cree("div", "msg " + classe);
@@ -335,32 +340,34 @@ enregistrerOutil("assistant", "IA", "Assistant IA", (section) => {
   }
 
   async function appeler() {
-    const rep = await fetch(API, {
-      method: "POST",
-      headers: {
-        "x-api-key": cle,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({ model: modele, max_tokens: 4096, system: systeme(), tools: OUTILS, messages }),
-    });
-    if (!rep.ok) {
-      const err = await rep.json().catch(() => null);
-      const msg = err?.error?.message ?? `erreur ${rep.status}`;
-      if (rep.status === 401) throw new Error("Clé API refusée. Vérifiez-la dans « Clé API et modèle ».");
-      if (rep.status === 429) throw new Error("Trop de demandes ou crédit épuisé. Réessayez dans un instant.");
-      throw new Error(msg);
+    const r = await fonctionIA({ model: MODELE, system: systeme(), tools: OUTILS, messages });
+    if (r.ok) {
+      const q = (r.data as any)?.nexbim;
+      if (q && etatIA) {
+        etatIA.questions = q.questions ?? etatIA.questions;
+        etatIA.actif = etatIA.admin || !!q.actif;
+        majEtat();
+      }
+      return r.data as any;
     }
-    return rep.json();
+    const code = (r.data as any)?.erreur;
+    if (code === "ESSAI") {
+      if (etatIA) etatIA.questions = etatIA.essai;
+      else etatIA = { admin: false, actif: false, questions: 3, essai: 3, demande: true };
+      majEtat();
+      throw new Error("Vos 3 questions d'essai sont utilisées. Votre demande d'accès a été envoyée à l'administrateur.");
+    }
+    if (code === "JOUR") throw new Error("Limite du jour atteinte. Réessayez demain.");
+    if (code === "CLE_ABSENTE") throw new Error("L'assistant n'est pas encore configuré. Réessayez plus tard.");
+    if (code === "TROP_LONG") throw new Error("Conversation trop longue : commencez une nouvelle conversation.");
+    if (code === "NON_CONNECTE") throw new Error("Session expirée : reconnectez-vous.");
+    throw new Error("L'assistant ne répond pas pour le moment. Réessayez dans un instant.");
   }
 
   async function envoyer(question: string) {
     if (occupe) return;
-    if (!cle) {
-      reglages.open = true;
-      champCle.focus();
-      alerte("Saisissez d'abord votre clé API Anthropic.");
+    if (bloque()) {
+      majEtat();
       return;
     }
     if (!maquettes.size) {
@@ -421,9 +428,9 @@ enregistrerOutil("assistant", "IA", "Assistant IA", (section) => {
 
   return {
     ouvrir: () => {
-      majEtat();
-      if (cle) champ.focus();
+      oublierAncienneCle();
+      void chargerEtat();
+      champ.focus();
     },
   };
 });
-

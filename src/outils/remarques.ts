@@ -11,6 +11,7 @@ import {
   directionDepuisIfc,
   directionVersIfc,
   monde,
+  recentrerPivot,
   telecharger,
   versIfc,
 } from "../noyau";
@@ -102,11 +103,13 @@ async function allerA(r: Remarque) {
       if (!b.isEmpty()) distance = Math.max(2, p.distanceTo(b.getCenter(new THREE.Vector3())));
     }
     const c = p.clone().addScaledVector(d, distance);
+    recentrerPivot();
     await monde.camera.controls.setLookAt(p.x, p.y, p.z, c.x, c.y, c.z, true);
   } else if (ids.size) {
     const b = await boiteDe(ids);
     if (!b.isEmpty()) {
       const s = b.getBoundingSphere(new THREE.Sphere());
+      recentrerPivot();
       await monde.camera.controls.fitToSphere(s, true);
     }
   }

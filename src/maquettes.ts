@@ -12,6 +12,7 @@ import {
   el,
   fragments,
   grille,
+  recentrerPivot,
   monde,
   rafraichir,
 } from "./noyau";
@@ -196,6 +197,7 @@ export async function recadrer() {
   const liste = visibles();
   if (liste.length === 0) return;
 
+  recentrerPivot();
   // Sur l'exemple, on cadre le bâtiment plutôt que le terrain autour.
   const batiment = exempleAffiche() ? maquettes.get("Structure") : undefined;
   if (batiment && batiment.modele.object.visible) {

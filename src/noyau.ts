@@ -43,13 +43,16 @@ export const monde = composants
 
 monde.scene = new OBC.SimpleScene(composants);
 monde.scene.setup();
-monde.scene.three.background = new THREE.Color("#0f1318");
+// Fond gris anthracite : moins dur que le noir, les maquettes claires ressortent.
+monde.scene.three.background = new THREE.Color("#262b32");
 monde.renderer = new OBF.PostproductionRenderer(composants, el("scene"));
 monde.camera = new OBC.OrthoPerspectiveCamera(composants);
 composants.init();
 
 export const grille = composants.get(OBC.Grids).create(monde);
 grille.config.color = new THREE.Color("#2a323d");
+// Pas de quadrillage au sol : il chargeait la vue sans rien apporter.
+grille.visible = false;
 
 export const fragments = composants.get(OBC.FragmentsManager);
 fragments.init(urlOuvrier);
@@ -75,6 +78,27 @@ export function rafraichir() {
  * Sur téléphone, les panneaux du bas (outil, fiche) cachent une partie de la vue :
  * on décale le point visé pour qu'il reste au centre de la zone encore visible.
  */
+/** Décalage vertical de mise en page en cours (panneau ouvert en bas sur téléphone). */
+let decalageMise = 0;
+
+/**
+ * Le pivot de rotation posé sous le doigt (pivot.ts) déplace la cible de la caméra et
+ * la compense par un décalage. Avant un cadrage, on remet la cible dans l'axe de la vue,
+ * sans bouger l'image, en gardant le décalage de mise en page.
+ */
+export function recentrerPivot() {
+  const c = monde.camera.controls;
+  const cam = monde.camera.three;
+  cam.updateMatrixWorld();
+  const position = cam.position.clone();
+  const haut = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+  const direction = cam.getWorldDirection(new THREE.Vector3());
+  const base = position.addScaledVector(haut, decalageMise);
+  const cible = base.clone().addScaledVector(direction, Math.max(c.distance, 0.5));
+  void c.setFocalOffset(0, decalageMise, 0, false);
+  void c.setLookAt(base.x, base.y, base.z, cible.x, cible.y, cible.z, false);
+}
+
 export function ajusterDecalage(transition = true) {
   const canvas = monde.renderer!.three.domElement;
   const H = canvas.clientHeight || window.innerHeight;
@@ -90,6 +114,8 @@ export function ajusterDecalage(transition = true) {
   const fov = THREE.MathUtils.degToRad(cam.fov ?? 60);
   const hauteurVue = 2 * monde.camera.controls.distance * Math.tan(fov / 2);
   const d = bas > 0 ? ((bas - haut) / 2 / H) * hauteurVue : 0;
+  recentrerPivot();
+  decalageMise = d;
   void monde.camera.controls.setFocalOffset(0, d, 0, transition);
 }
 
@@ -98,6 +124,7 @@ export async function cadrer(boite: THREE.Box3, marge = 1.15) {
   if (boite.isEmpty()) return;
   const sphere = boite.getBoundingSphere(new THREE.Sphere());
   sphere.radius = Math.max(sphere.radius * marge, 1.5);
+  recentrerPivot();
   await monde.camera.controls.fitToSphere(sphere, true);
   ajusterDecalage();
 }

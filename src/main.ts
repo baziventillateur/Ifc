@@ -5,6 +5,7 @@ import { recadrer } from "./maquettes";
 import { attendreSession } from "./nuage/compte";
 import { demanderDepot, demarrerNuage, deposer } from "./nuage/projets";
 import "./fiche";
+import "./pivot";
 
 // Outils, dans l'ordre de la barre.
 import "./selection";

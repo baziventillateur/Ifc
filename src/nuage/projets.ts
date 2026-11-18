@@ -457,6 +457,7 @@ btnProjet.addEventListener("click", () => ouvrirPanneau());
 // --- Panneau admin ----------------------------------------------------------------
 
 type Compte = {
+  id: string;
   email: string;
   prenom: string;
   inscrit_le: string;
@@ -466,9 +467,34 @@ type Compte = {
   invitations_recues: number;
   maquettes: number;
   octets: number;
+  ia_questions: number;
+  ia_actif: boolean;
+  ia_demande: string | null;
 };
 
 const jour = (d: string | null) => (d ? new Date(d).toLocaleDateString("fr-FR") : "—");
+
+/** État de l'assistant IA d'un compte, avec le bouton pour l'ouvrir ou le couper. */
+function celluleIA(c: Compte) {
+  const td = cree("td", "admin-ia");
+  const libelle = c.ia_actif
+    ? "Activée"
+    : c.ia_demande
+      ? `Demande · ${c.ia_questions}/3`
+      : `Essai · ${c.ia_questions}/3`;
+  const basculer = bouton(c.ia_actif ? "lien danger" : "puce allume", c.ia_actif ? "Couper" : "Activer", async () => {
+    basculer.disabled = true;
+    const { error } = await nuage.rpc("admin_ia", { p_uid: c.id, p_actif: !c.ia_actif });
+    if (error) {
+      basculer.disabled = false;
+      alerte("Impossible de changer l'accès à l'IA.");
+      return;
+    }
+    await ouvrirAdmin();
+  });
+  td.append(cree("span", "", libelle), basculer);
+  return td;
+}
 
 async function ouvrirAdmin() {
   const corps = ouvrirFenetre("Panneau admin", true);
@@ -479,6 +505,7 @@ async function ouvrirAdmin() {
     return;
   }
   const comptes = (data ?? []) as Compte[];
+  const demandes = comptes.filter((x) => x.ia_demande && !x.ia_actif).length;
   const somme = (c: (x: Compte) => number) => comptes.reduce((s, x) => s + Number(c(x)), 0);
   const chiffres = cree("div", "admin-chiffres");
   for (const [valeur, nom] of [
@@ -486,6 +513,7 @@ async function ouvrirAdmin() {
     [String(somme((x) => x.projets)), "projets"],
     [String(somme((x) => x.maquettes)), "maquettes"],
     [taille(somme((x) => x.octets)), "stockage"],
+    [String(demandes), "demandes IA"],
   ]) {
     const c = cree("div", "admin-chiffre");
     c.append(cree("strong", "", valeur), cree("span", "", nom));
@@ -493,7 +521,7 @@ async function ouvrirAdmin() {
   }
   const table = cree("table", "admin-table");
   const tete = cree("tr");
-  for (const t of ["Prénom", "E-mail", "Inscrit", "Vu", "Projets", "Invité", "Maquettes", "Stockage"])
+  for (const t of ["Prénom", "E-mail", "Inscrit", "Vu", "Projets", "Invité", "Maquettes", "Stockage", "IA"])
     tete.append(cree("th", "", t));
   table.append(tete);
   for (const c of comptes) {
@@ -509,6 +537,8 @@ async function ouvrirAdmin() {
       Number(c.octets) ? taille(Number(c.octets)) : "—",
     ])
       tr.append(cree("td", "", v));
+    tr.append(celluleIA(c));
+    tr.classList.toggle("demande-ia", !!c.ia_demande && !c.ia_actif);
     table.append(tr);
   }
   const defile = cree("div", "admin-defile");

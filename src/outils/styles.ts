@@ -8,11 +8,10 @@ import { enregistrerOutil, marquerOutil } from "./panneau";
 import { curseur, interrupteur, note, titreSection } from "./ui";
 
 const CLE = "nexbim-styles";
-const reglages = { aretes: false, couleur: "#111418", epaisseur: 1, ombres: false, intensite: 0.55, lisser: false };
-/** Teinte neutre vers laquelle l'intensité adoucit les arêtes (gris clair des maquettes). */
-const NEUTRE = new THREE.Color("#c9ced6");
+const reglages = { aretes: false, couleur: "#111418", epaisseur: 1, ombres: false, lisser: false };
 try {
-  Object.assign(reglages, JSON.parse(localStorage.getItem(CLE) || "{}"));
+  const { intensite: _ancienne, ...lus } = JSON.parse(localStorage.getItem(CLE) || "{}");
+  Object.assign(reglages, lus);
 } catch {
   // Mémoire locale indisponible : réglages par défaut.
 }
@@ -33,7 +32,7 @@ async function appliquer() {
         : OBF.PostproductionAspect.COLOR_PEN
       : OBF.PostproductionAspect.COLOR_SHADOWS;
     if (reglages.aretes) {
-      post.edgesPass.color = NEUTRE.clone().lerp(new THREE.Color(reglages.couleur), reglages.intensite);
+      post.edgesPass.color = new THREE.Color(reglages.couleur);
       post.edgesPass.width = reglages.epaisseur;
     }
     if (post.smaaEnabled !== reglages.lisser) post.smaaEnabled = reglages.lisser;
@@ -61,14 +60,6 @@ enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
     void appliquer();
   });
   epaisseur.sortie.textContent = `${reglages.epaisseur} px`;
-
-  const pct = (v: number) => `${Math.round(v * 100)} %`;
-  const intensite = curseur(15, 100, 5, Math.round(reglages.intensite * 100), (v) => {
-    reglages.intensite = v / 100;
-    intensite.sortie.textContent = pct(reglages.intensite);
-    void appliquer();
-  });
-  intensite.sortie.textContent = pct(reglages.intensite);
 
   const teintes = cree("div", "puces");
   for (const [nom, hex] of [
@@ -98,8 +89,6 @@ enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
     }).racine,
     rangCouleur,
     teintes,
-    titreSection("Intensité"),
-    intensite.racine,
     titreSection("Épaisseur"),
     epaisseur.racine,
     interrupteur("Lisser les arêtes (moins de pixels, un peu plus lent)", reglages.lisser, (v) => {

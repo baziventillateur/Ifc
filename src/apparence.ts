@@ -2,7 +2,8 @@
 // clashs, quantitatifs, IA…), sélection, et visibilité des éléments (filtres,
 // isolement). Une seule source de vérité pour éviter que les outils se marchent dessus.
 import * as THREE from "three";
-import { rafraichir, Signal, type MaterialDefinition } from "./noyau";
+import * as OBF from "@thatopen/components-front";
+import { composants, monde, rafraichir, reglerPost, Signal, type MaterialDefinition } from "./noyau";
 import { maquettes, reglages, type Maquette } from "./registre";
 
 export type Ids = Map<string, Set<number>>;
@@ -28,6 +29,33 @@ export const STYLES = {
 type Couche = { nom: string; style: MaterialDefinition; ids: Ids; focus: boolean };
 const couches: Couche[] = [];
 const selection: Ids = new Map();
+
+// La sélection se voit par un contour jaune néon, visible à travers les autres éléments,
+// et un léger voile : l'élément garde sa couleur (et celle qu'on lui donne).
+let contour: OBF.Outliner | null = null;
+
+async function majContour() {
+  if (!selection.size) {
+    contour?.clean();
+    reglerPost("selection", false);
+    return;
+  }
+  // Le contour vit dans la post-production : on l'allume avant de le créer.
+  reglerPost("selection", true);
+  if (!contour) {
+    contour = composants.get(OBF.Outliner);
+    contour.world = monde;
+    contour.color = new THREE.Color("#e8ff1a");
+    contour.thickness = 3;
+    contour.fillColor = new THREE.Color("#f0ff3d");
+    contour.fillOpacity = 0.16;
+    contour.enabled = true;
+  }
+  contour.clean();
+  const carte: Record<string, Set<number>> = {};
+  for (const [mid, ids] of selection) carte[mid] = new Set(ids);
+  await contour.addItems(carte);
+}
 /** Émis quand la sélection change. */
 export const selectionModifiee = new Signal();
 /** Émis quand la liste des éléments masqués à la main change. */
@@ -142,7 +170,6 @@ export function effacerPerso() {
 }
 
 function styleDe(m: Maquette, id: number) {
-  if (selection.get(m.id)?.has(id)) return STYLES.selection;
   for (let i = couches.length - 1; i >= 0; i--) {
     if (couches[i].ids.get(m.id)?.has(id)) return couches[i].style;
   }
@@ -179,8 +206,6 @@ async function appliquerModele(m: Maquette) {
     const ids = c.ids.get(m.id);
     if (ids && ids.size) await modele.highlight([...ids], c.style);
   }
-  const choisis = selection.get(m.id);
-  if (choisis && choisis.size) await modele.highlight([...choisis], STYLES.selection);
 }
 
 /** Réapplique toute l'apparence (après un changement de couleur, de couche…). */
@@ -239,21 +264,7 @@ export function definirSelection(nouvelle: Ids) {
     selection.clear();
     for (const [mid, ids] of nouvelle) if (ids.size && maquettes.has(mid)) selection.set(mid, new Set(ids));
     if (change.size === 0) return;
-
-    for (const [mid, ids] of change) {
-      const m = maquettes.get(mid);
-      if (!m) continue;
-      const parStyle = new Map<MaterialDefinition | undefined, number[]>();
-      for (const id of ids) {
-        const st = styleDe(m, id);
-        if (!parStyle.has(st)) parStyle.set(st, []);
-        parStyle.get(st)!.push(id);
-      }
-      for (const [st, liste] of parStyle) {
-        if (st) await m.modele.highlight(liste, st);
-        else await m.modele.resetHighlight(liste);
-      }
-    }
+    await majContour();
     await rafraichir();
     selectionModifiee.emit();
   });

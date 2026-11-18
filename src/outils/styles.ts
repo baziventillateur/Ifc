@@ -2,7 +2,7 @@
 // lire les volumes quand tout est de la même teinte (gros œuvre en béton, par exemple).
 import * as THREE from "three";
 import * as OBF from "@thatopen/components-front";
-import { bouton, cree, monde, nombre, rafraichir } from "../noyau";
+import { bouton, cree, nombre, rafraichir, reglerPost } from "../noyau";
 import { effacerPerso, nombrePerso, persoModifiee } from "../apparence";
 import { enregistrerOutil, marquerOutil } from "./panneau";
 import { curseur, interrupteur, note, titreSection } from "./ui";
@@ -22,22 +22,21 @@ async function appliquer() {
   } catch {
     // Réglages gardés pour la session seulement.
   }
-  const post = monde.renderer!.postproduction;
   const actif = reglages.aretes || reglages.ombres;
-  if (actif) {
-    post.enabled = true;
-    post.style = reglages.aretes
+  const aspect = !actif
+    ? null
+    : reglages.aretes
       ? reglages.ombres
         ? OBF.PostproductionAspect.COLOR_PEN_SHADOWS
         : OBF.PostproductionAspect.COLOR_PEN
       : OBF.PostproductionAspect.COLOR_SHADOWS;
+  const post = reglerPost("styles", actif, aspect);
+  if (actif) {
     if (reglages.aretes) {
       post.edgesPass.color = new THREE.Color(reglages.couleur);
       post.edgesPass.width = reglages.epaisseur;
     }
     if (post.smaaEnabled !== reglages.lisser) post.smaaEnabled = reglages.lisser;
-  } else if (post.enabled) {
-    post.enabled = false;
   }
   marquerOutil("styles", actif);
   await rafraichir();

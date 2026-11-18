@@ -78,6 +78,23 @@ export function rafraichir() {
  * Sur téléphone, les panneaux du bas (outil, fiche) cachent une partie de la vue :
  * on décale le point visé pour qu'il reste au centre de la zone encore visible.
  */
+// --- Post-production (arêtes, ombres, contour de sélection) ------------------------
+// Allumée seulement quand un outil en a besoin : elle coûte un peu sur les petits appareils.
+const besoinsPost = new Set<string>();
+let aspectStyles: OBF.PostproductionAspect | null = null;
+
+/** Déclare (ou retire) un besoin de post-production ; « styles » fixe aussi l'aspect. */
+export function reglerPost(raison: string, oui: boolean, aspect?: OBF.PostproductionAspect | null) {
+  if (aspect !== undefined) aspectStyles = aspect;
+  if (oui) besoinsPost.add(raison);
+  else besoinsPost.delete(raison);
+  const post = monde.renderer!.postproduction;
+  const actif = besoinsPost.size > 0;
+  if (post.enabled !== actif) post.enabled = actif;
+  if (actif) post.style = aspectStyles ?? OBF.PostproductionAspect.COLOR;
+  return post;
+}
+
 /** Décalage vertical de mise en page en cours (panneau ouvert en bas sur téléphone). */
 let decalageMise = 0;
 

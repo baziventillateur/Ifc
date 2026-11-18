@@ -31,19 +31,11 @@ menu.setAttribute("role", "menu");
 document.body.append(menu);
 
 let cible: Ids = new Map();
-let selectionLevee = false;
 
 const compter = (ids: Ids) => [...ids.values()].reduce((n, s) => n + s.size, 0);
 
-/** La sélection orange cache la couleur : on la lève dès le premier changement. */
-async function leverSelection() {
-  if (selectionLevee) return;
-  selectionLevee = true;
-  if (nombreSelection() > 0) await fermerFiche();
-}
-
+// La sélection n'est qu'un contour : la nouvelle couleur se voit sans la lever.
 async function teinter(changement: { hex?: string; opacite?: number } | null) {
-  await leverSelection();
   await definirTeinte(cible, changement);
 }
 
@@ -104,7 +96,6 @@ export function fermerMenu() {
 
 export function ouvrirMenu(ids: Ids, x: number, y: number) {
   cible = new Map([...ids].map(([k, v]) => [k, new Set(v)]));
-  selectionLevee = false;
   const n = compter(cible);
   if (n === 0) return;
   const actuelle = teinteDe(cible);

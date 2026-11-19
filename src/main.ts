@@ -6,6 +6,7 @@ import { attendreSession } from "./nuage/compte";
 import { demanderDepot, demarrerNuage, deposer } from "./nuage/projets";
 import "./fiche";
 import "./pivot";
+import "./navigation";
 
 // Outils, dans l'ordre de la barre.
 import "./selection";

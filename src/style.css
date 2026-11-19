@@ -2372,3 +2372,7 @@ body.selection-active .bandeau {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+
+canvas.regard {
+  cursor: all-scroll;
+}

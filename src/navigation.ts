@@ -271,3 +271,30 @@ window.addEventListener("keyup", (e) => {
   enfoncees.delete(e.key);
 });
 window.addEventListener("blur", () => enfoncees.clear());
+
+// --- Voir de très près sans que l'objet soit rogné -----------------------------------
+// La caméra ne dessine rien en deçà d'une distance minimale (1 m à l'origine) : en
+// zoomant sur un détail, il était coupé puis disparaissait. Dès qu'on est près ou
+// dans la maquette, cette distance tombe à 5 cm ; de loin, elle reste plus grande,
+// ce qui garde un dessin net des surfaces lointaines.
+const boiteScene = new THREE.Box3();
+let boiteAJour = 0;
+monde.renderer!.onBeforeUpdate.add(() => {
+  const cam = monde.camera.threePersp;
+  const t = performance.now();
+  if (t - boiteAJour > 2000) {
+    boiteAJour = t;
+    boiteScene.makeEmpty();
+    for (const m of maquettes.values()) if (m.modele.object.visible) boiteScene.union(m.modele.box);
+  }
+  if (boiteScene.isEmpty()) return;
+  const distance = boiteScene.distanceToPoint(cam.position);
+  const diagonale = boiteScene.min.distanceTo(boiteScene.max);
+  const pres = THREE.MathUtils.clamp(distance * 0.02, 0.05, 1);
+  const loin = Math.max(1000, (distance + diagonale) * 1.5);
+  if (Math.abs(cam.near - pres) > pres * 0.1 || Math.abs(cam.far - loin) > loin * 0.1) {
+    cam.near = pres;
+    cam.far = loin;
+    cam.updateProjectionMatrix();
+  }
+});

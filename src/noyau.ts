@@ -84,6 +84,20 @@ const besoinsPost = new Set<string>();
 let aspectStyles: OBF.PostproductionAspect | null = null;
 
 /** Déclare (ou retire) un besoin de post-production ; « styles » fixe aussi l'aspect. */
+function majCameraPost() {
+  const post = monde.renderer!.postproduction as unknown as {
+    updateCamera?: () => void;
+    _glossPass?: { renderCamera: THREE.Camera };
+    _simpleOutlinePass?: { camera?: THREE.Camera; renderCamera?: THREE.Camera };
+  };
+  try {
+    post.updateCamera?.();
+    if (post._glossPass) post._glossPass.renderCamera = monde.camera.three;
+  } catch {
+    // Post-production pas encore prête : elle prendra la bonne caméra à sa création.
+  }
+}
+
 export function reglerPost(raison: string, oui: boolean, aspect?: OBF.PostproductionAspect | null) {
   if (aspect !== undefined) aspectStyles = aspect;
   if (oui) besoinsPost.add(raison);
@@ -92,6 +106,7 @@ export function reglerPost(raison: string, oui: boolean, aspect?: OBF.Postproduc
   const actif = besoinsPost.size > 0;
   if (post.enabled !== actif) post.enabled = actif;
   if (actif) post.style = aspectStyles ?? OBF.PostproductionAspect.COLOR;
+  if (actif) majCameraPost();
   return post;
 }
 
@@ -326,6 +341,8 @@ monde.camera.projection.onChanged.add((cam: THREE.PerspectiveCamera | THREE.Orth
   const pincer = (ortho ? ACTION.TOUCH_ZOOM_TRUCK : ACTION.TOUCH_DOLLY_TRUCK) as never;
   monde.camera.controls.touches.two = pincer;
   monde.camera.controls.touches.three = pincer;
+  // Les passes d'arêtes et d'ombrage gardaient l'ancienne caméra : image dédoublée.
+  majCameraPost();
   void fragments.core.update(true);
   projectionModifiee.emit();
 });

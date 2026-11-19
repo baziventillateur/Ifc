@@ -2,7 +2,7 @@
 // lire les volumes quand tout est de la même teinte (gros œuvre en béton, par exemple).
 import * as THREE from "three";
 import * as OBF from "@thatopen/components-front";
-import { bouton, cree, nombre, rafraichir, reglerPost } from "../noyau";
+import { bouton, cree, definirProjection, estOrtho, nombre, projectionModifiee, rafraichir, reglerPost } from "../noyau";
 import { effacerPerso, nombrePerso, persoModifiee } from "../apparence";
 import { enregistrerOutil, marquerOutil } from "./panneau";
 import { interrupteur, note, titreSection } from "./ui";
@@ -92,6 +92,18 @@ enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
   });
   const legende = note("");
 
+  // --- Projection (même réglage que le bouton Ortho de la barre du haut)
+  const vue = cree("div", "segments");
+  const segPersp = bouton("segment", "Perspective", () => void definirProjection("Perspective"));
+  const segOrtho = bouton("segment", "Orthogonale", () => void definirProjection("Orthographic"), "Sans perspective (touche O)");
+  vue.append(segPersp, segOrtho);
+  const majVue = () => {
+    segPersp.classList.toggle("actif", !estOrtho());
+    segOrtho.classList.toggle("actif", estOrtho());
+  };
+  projectionModifiee.on(majVue);
+  majVue();
+
   // --- Réglages du style personnalisé
   const perso = cree("div", "styles-perso");
   const aretes = interrupteur("Dessiner les arêtes (noires)", etat.perso.aretes, (v) => {
@@ -147,6 +159,8 @@ enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
     choix,
     legende,
     perso,
+    titreSection("Vue"),
+    vue,
     titreSection("Couleurs posées à la main"),
     persoEtat,
     persoBouton,

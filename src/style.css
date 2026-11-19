@@ -2575,3 +2575,46 @@ body:has(.porte) .version-etiquette {
 .dialogue-fond.au-dessus {
   z-index: 200;
 }
+
+/* --- Panneau Projet : liste de mes projets ----------------------------------------- */
+.projets-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+
+.projet-ligne {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--bord);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.projet-ligne.actif {
+  border-color: var(--accent);
+  background: rgba(255, 140, 26, 0.1);
+  cursor: default;
+}
+
+.projet-nom {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projet-role {
+  flex: none;
+  color: var(--doux);
+  font-size: 11px;
+}

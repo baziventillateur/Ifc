@@ -18,7 +18,7 @@ import {
   ouvrirDepuisNuage,
   retirer,
 } from "../maquettes";
-import { adresseSite, MAQUETTES_MAX, nuage, OCTETS_MAX, OCTETS_MAX_ADMIN, taille } from "./client";
+import { adresseSite, MAQUETTES_MAX, nuage, PROJETS_MAX, OCTETS_MAX, OCTETS_MAX_ADMIN, taille } from "./client";
 import { compresser, decompresser, envoyerMaquette } from "./envoi";
 import { seDeconnecter } from "./compte";
 
@@ -53,7 +53,6 @@ const btnAjouter = el<HTMLButtonElement>("btn-ajouter");
 const btnProjet = el<HTMLButtonElement>("btn-projet");
 
 const createur = () => !!etat.courant && etat.courant.proprietaire === etat.moi.id;
-const aSonProjet = () => etat.projets.some((p) => p.proprietaire === etat.moi.id);
 const nomLocal = (nom: string) => nom.replace(/\.ifc$/i, "");
 
 // --- Fenêtres ---------------------------------------------------------------------
@@ -136,7 +135,7 @@ function majBandeau() {
 
 function messageErreur(e: { message?: string; code?: string; statut?: number } | null) {
   const m = e?.message ?? "";
-  if (m.includes("LIMITE_PROJETS")) return "Vous avez déjà un projet (un seul par compte).";
+  if (m.includes("LIMITE_PROJETS")) return `Vous avez déjà ${PROJETS_MAX} projets : c'est le maximum par compte.`;
   if (m.includes("LIMITE_MAQUETTES")) return `Le projet a déjà ${MAQUETTES_MAX} maquettes (maximum).`;
   if (e?.code === "23505") return "Une maquette porte déjà ce nom dans le projet.";
   if (e?.statut === 413 || /maximum allowed size|payload too large/i.test(m) || m.includes("TAILLE_MAX"))
@@ -525,11 +524,33 @@ function ouvrirPanneau(info = "") {
   const corps = ouvrirFenetre("Projet");
   if (info) corps.append(cree("p", "modale-info", info));
 
-  if (!etat.courant || !aSonProjet()) {
+  // --- Mes projets : passer de l'un à l'autre, en créer un
+  const miens = etat.projets.filter((p) => p.proprietaire === etat.moi.id).length;
+  const peutCreer = etat.admin || miens < PROJETS_MAX;
+  corps.append(
+    section(etat.admin ? "Mes projets" : `Mes projets · ${miens}/${PROJETS_MAX}`),
+  );
+  if (etat.projets.length === 0) {
+    corps.append(cree("p", "modale-aide", `Un projet regroupe jusqu'à ${MAQUETTES_MAX} maquettes IFC et les personnes que vous invitez.`));
+  }
+  const listeProjets = cree("div", "projets-liste");
+  for (const p of etat.projets) {
+    const actif = p.id === etat.courant?.id;
+    const ligne = bouton("projet-ligne" + (actif ? " actif" : ""), "", () => {
+      if (actif) return;
+      fermer();
+      void ouvrirProjet(p);
+    }, actif ? "Projet affiché" : "Ouvrir ce projet");
+    ligne.append(
+      cree("span", "projet-nom", p.nom),
+      cree("span", "projet-role", p.proprietaire === etat.moi.id ? (actif ? "affiché" : "") : actif ? "invité · affiché" : "invité"),
+    );
+    listeProjets.append(ligne);
+  }
+  if (etat.projets.length) corps.append(listeProjets);
+  if (peutCreer) {
     corps.append(
-      section("Créer mon projet"),
-      cree("p", "modale-aide", `Un projet regroupe jusqu'à ${MAQUETTES_MAX} maquettes IFC (50 Mo chacune) et les personnes que vous invitez.`),
-      formulaire("Nom du projet", "Créer", "text", async (nom) => {
+      formulaire("Nom du nouveau projet", "Créer", "text", async (nom) => {
         const { data, error } = await nuage.from("projets").insert({ nom }).select("id, nom, proprietaire").single();
         if (error || !data) return messageErreur(error);
         etat.projets.push(data as Projet);
@@ -538,26 +559,12 @@ function ouvrirPanneau(info = "") {
         ouvrirPanneau("Projet créé. Déposez votre première maquette.");
       }),
     );
+  } else {
+    corps.append(cree("p", "modale-aide", `${PROJETS_MAX} projets au maximum par compte. Supprimez-en un pour en créer un autre.`));
   }
 
   const projet = etat.courant;
   if (projet) {
-    if (etat.projets.length > 1) {
-      const choix = cree("select", "modale-choix");
-      for (const p of etat.projets) {
-        const o = cree("option", "", p.nom + (p.proprietaire === etat.moi.id ? "" : " (invité)"));
-        o.value = p.id;
-        o.selected = p.id === projet.id;
-        choix.append(o);
-      }
-      choix.addEventListener("change", () => {
-        const p = etat.projets.find((x) => x.id === choix.value);
-        fermer();
-        if (p) void ouvrirProjet(p);
-      });
-      corps.append(section("Projet affiché"), choix);
-    }
-
     corps.append(section(`${projet.nom} · maquettes ${etat.fichiers.length}/${MAQUETTES_MAX}`));
     if (etat.fichiers.length === 0) corps.append(cree("p", "modale-aide", "Aucune maquette déposée."));
     for (const f of etat.fichiers) {

@@ -16,6 +16,8 @@ export const CLE_PUBLIQUE = "sb_publishable_aoozWfzWkCfGCfqNpWzFlw_I0ACEzrB";
 export const nuage = createClient(URL_NUAGE, CLE_PUBLIQUE);
 
 export const MAQUETTES_MAX = 10;
+/** Projets par compte (l'admin n'est pas limité). */
+export const PROJETS_MAX = 2;
 export const OCTETS_MAX = 50 * 1024 * 1024;
 /** Limite réservée au compte administrateur. */
 export const OCTETS_MAX_ADMIN = 500 * 1024 * 1024;

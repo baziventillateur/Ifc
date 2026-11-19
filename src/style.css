@@ -2513,3 +2513,65 @@ canvas.regard {
 .btn-angle[hidden] {
   display: none;
 }
+
+/* --- Numéro de version (discret) et fenêtre des versions --------------------------- */
+.version-etiquette {
+  appearance: none;
+  position: fixed;
+  z-index: 9;
+  right: 4px;
+  bottom: calc(3px + env(safe-area-inset-bottom));
+  padding: 2px 5px;
+  border: 0;
+  background: transparent;
+  color: var(--doux);
+  font: inherit;
+  font-size: 10px;
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.version-etiquette.perimee {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.dialogue.versions {
+  width: min(440px, calc(100vw - 20px));
+}
+
+.versions-liste {
+  max-height: 46vh;
+  overflow-y: auto;
+  margin: 4px 0 10px;
+}
+
+.versions-ligne {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1px 8px;
+  padding: 5px 0;
+  border-top: 1px solid var(--bord);
+  font-size: 12px;
+}
+
+.versions-numero {
+  color: var(--accent);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.versions-date {
+  grid-column: 2;
+  color: var(--doux);
+  font-size: 10.5px;
+}
+
+/* Sur l'accueil et la connexion, le numéro reste lisible par-dessus. */
+body:has(.porte) .version-etiquette {
+  z-index: 100;
+}
+
+.dialogue-fond.au-dessus {
+  z-index: 200;
+}

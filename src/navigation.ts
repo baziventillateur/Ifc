@@ -5,7 +5,7 @@
 //   Maj pour aller plus vite.
 import * as THREE from "three";
 import { completerTir } from "./deplacements";
-import { lanceur, monde, projectionModifiee, recentrerPivot } from "./noyau";
+import { alerte, lanceur, monde, projectionModifiee, recentrerPivot } from "./noyau";
 import { maquettes } from "./registre";
 
 const canvas = monde.renderer!.three.domElement;
@@ -14,9 +14,16 @@ const ACTION = (controles.constructor as unknown as { ACTION: Record<string, num
 
 // --- Bouton de la molette : déplacer -------------------------------------------------
 
+// Mode « œil » (bouton sur la vue, pour le téléphone) : un doigt tourne la tête sur
+// place au lieu de faire tourner la maquette. Deux doigts zooment et déplacent toujours.
+let oeil = false;
+export const modeOeil = () => oeil;
+
 function reglerBoutons() {
   controles.mouseButtons.middle = ACTION.TRUCK as never;
   controles.mouseButtons.right = ACTION.NONE as never;
+  controles.mouseButtons.left = (oeil ? ACTION.NONE : ACTION.ROTATE) as never;
+  controles.touches.one = (oeil ? ACTION.NONE : ACTION.TOUCH_ROTATE) as never;
 }
 reglerBoutons();
 // Le changement de projection remet les boutons d'origine de la bibliothèque.
@@ -93,7 +100,8 @@ canvas.addEventListener("auxclick", (e) => e.preventDefault());
 
 const SENSIBILITE = 0.22; // degrés par pixel
 const SEUIL = 5;
-let regard: { x: number; y: number; actif: boolean; id: number } | null = null;
+let regard: { x: number; y: number; actif: boolean; id: number; droit: boolean } | null = null;
+const appuis = new Set<number>();
 
 function tournerTete(lacet: number, tangage: number) {
   const position = controles.getPosition(new THREE.Vector3());
@@ -109,12 +117,18 @@ function tournerTete(lacet: number, tangage: number) {
 }
 
 canvas.addEventListener("pointerdown", (e) => {
-  if (e.pointerType !== "mouse" || e.button !== 2) return;
-  regard = { x: e.clientX, y: e.clientY, actif: false, id: e.pointerId };
+  appuis.add(e.pointerId);
+  if (e.pointerType === "mouse" && e.button === 2) {
+    regard = { x: e.clientX, y: e.clientY, actif: false, id: e.pointerId, droit: true };
+  } else if (oeil && (e.pointerType !== "mouse" || e.button === 0)) {
+    // Un second doigt : c'est un zoom ou un déplacement, plus un regard.
+    if (appuis.size > 1) finRegard();
+    else regard = { x: e.clientX, y: e.clientY, actif: false, id: e.pointerId, droit: false };
+  }
 });
 window.addEventListener("pointermove", (e) => {
   if (!regard || e.pointerId !== regard.id) return;
-  if (!(e.buttons & 2)) {
+  if (regard.droit && !(e.buttons & 2)) {
     finRegard();
     return;
   }
@@ -134,16 +148,33 @@ window.addEventListener("pointermove", (e) => {
   }
   regard.x = e.clientX;
   regard.y = e.clientY;
-  tournerTete(dx * SENSIBILITE, dy * SENSIBILITE);
+  // Au doigt, on tire l'image avec soi (comme une photo à 360°) ; à la souris, on vise.
+  const sens = e.pointerType === "mouse" ? 1 : -1;
+  tournerTete(sens * dx * SENSIBILITE, sens * dy * SENSIBILITE);
 });
 function finRegard() {
   if (regard?.actif) canvas.classList.remove("regard");
   regard = null;
 }
 window.addEventListener("pointerup", (e) => {
+  appuis.delete(e.pointerId);
   if (regard && e.pointerId === regard.id) finRegard();
 });
-window.addEventListener("pointercancel", finRegard);
+window.addEventListener("pointercancel", (e) => {
+  appuis.delete(e.pointerId);
+  finRegard();
+});
+
+const btnOeil = document.getElementById("btn-oeil");
+export function definirOeil(actif: boolean) {
+  oeil = actif;
+  finRegard();
+  reglerBoutons();
+  btnOeil?.classList.toggle("actif", oeil);
+  btnOeil?.setAttribute("aria-pressed", String(oeil));
+  if (oeil) alerte("Mode regard : un doigt pour tourner la tête sur place. Retouchez l'œil pour en sortir.", 3500);
+}
+btnOeil?.addEventListener("click", () => definirOeil(!oeil));
 
 // --- Flèches du clavier : marcher dans la maquette ----------------------------------------
 

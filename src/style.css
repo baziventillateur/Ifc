@@ -2376,3 +2376,97 @@ body.selection-active .bandeau {
 canvas.regard {
   cursor: all-scroll;
 }
+
+/* --- Fiche réduite (téléphone) et bouton du mode regard ---------------------------- */
+.fiche-poignee {
+  display: none;
+}
+
+@media (max-width: 819px) {
+  .fiche-poignee {
+    display: block;
+    padding: 5px 0 0;
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .fiche-poignee::before {
+    content: "";
+    display: block;
+    width: 34px;
+    height: 4px;
+    margin: 0 auto;
+    border-radius: 2px;
+    background: var(--bord);
+  }
+
+  .fiche-entete {
+    align-items: center;
+    padding-top: 4px;
+    touch-action: none;
+    cursor: pointer;
+  }
+
+  .fiche .fermer {
+    font-size: 18px;
+    padding: 2px 10px;
+  }
+
+  .fiche.reduite .fiche-corps {
+    display: none;
+  }
+
+  .fiche.reduite .fiche-entete {
+    border-bottom: 0;
+  }
+
+  .fiche.reduite .fiche-nom {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: calc(100vw - 70px);
+  }
+
+  /* La pastille « masqués / sélection » passe au-dessus de la fiche réduite. */
+  body:has(.fiche.ouverte) .barre-selection {
+    bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+
+  body:has(.fiche.ouverte:not(.reduite)) .barre-selection {
+    display: none;
+  }
+
+  body:has(.fiche.ouverte) .bandeau {
+    display: none;
+  }
+}
+
+.btn-oeil {
+  appearance: none;
+  position: fixed;
+  z-index: 11;
+  right: 8px;
+  top: calc(var(--haut-barre) + var(--haut-outils) + 8px);
+  width: 34px;
+  height: 34px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--bord);
+  border-radius: 50%;
+  background: var(--panneau-plein);
+  color: var(--doux);
+  cursor: pointer;
+}
+
+@media (max-width: 819px), (hover: none) {
+  .btn-oeil {
+    display: flex;
+  }
+}
+
+.btn-oeil.actif {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #3a2a14;
+}

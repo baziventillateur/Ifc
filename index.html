@@ -78,13 +78,18 @@
       Tournez avec un doigt, zoomez avec deux. Touchez un élément pour voir ses informations.
     </div>
 
+    <button id="btn-oeil" class="btn-oeil" type="button" aria-pressed="false" title="Mode regard : tourner la tête sur place" aria-label="Mode regard">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
+
     <aside class="fiche" id="fiche" aria-live="polite">
-      <div class="fiche-entete">
+      <div class="fiche-poignee" id="fiche-poignee" aria-hidden="true"></div>
+      <div class="fiche-entete" id="fiche-entete">
         <div>
           <div class="fiche-categorie" id="fiche-categorie"></div>
           <div class="fiche-nom" id="fiche-nom"></div>
         </div>
-        <button class="fermer" id="fiche-fermer" type="button" aria-label="Fermer">✕</button>
+        <button class="fermer" id="fiche-fermer" type="button" aria-label="Fermer la fiche">✕</button>
       </div>
       <div class="fiche-corps" id="fiche-corps"></div>
     </aside>

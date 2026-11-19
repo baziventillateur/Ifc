@@ -1,6 +1,7 @@
 // Navigation au doigt et à la souris. Au premier doigt (ou clic gauche), le point de la
 // maquette sous le pointeur devient le centre de rotation, sans faire bouger la vue ;
 // la vitesse de rotation et de zoom suit celle du geste.
+import { modeOeil } from "./navigation";
 import { completerTir } from "./deplacements";
 import * as THREE from "three";
 import { cree, lanceur, monde } from "./noyau";
@@ -46,7 +47,7 @@ canvas.addEventListener("pointerdown", (e) => {
 });
 
 window.addEventListener("pointermove", (e) => {
-  if (!depart || e.pointerId !== depart.id || !pivotPose || enCours.size > 1) return;
+  if (!depart || e.pointerId !== depart.id || !pivotPose || enCours.size > 1 || modeOeil()) return;
   if (repere.hidden && Math.hypot(e.clientX - depart.x, e.clientY - depart.y) > 6) {
     repere.style.left = `${depart.x}px`;
     repere.style.top = `${depart.y}px`;

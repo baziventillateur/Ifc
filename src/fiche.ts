@@ -118,7 +118,56 @@ async function toucher(e: PointerEvent) {
 
 let courant: { modele: string; id: number } | null = null;
 
-el("fiche-fermer").addEventListener("click", () => void fermerFiche());
+// Sur téléphone, la fiche arrive réduite (une ligne en bas) : on la déplie en touchant
+// son titre ou en la tirant vers le haut, on la replie en la tirant vers le bas.
+// Fermer ou replier la fiche garde la sélection ; toucher le vide la retire.
+const btnFiche = el("fiche-fermer");
+const petitEcran = () => window.innerWidth < 820;
+let depliee = false;
+
+function majFiche() {
+  const reduite = petitEcran() && !depliee;
+  fiche.classList.toggle("reduite", reduite);
+  btnFiche.textContent = petitEcran() ? (depliee ? "▾" : "▴") : "✕";
+  btnFiche.setAttribute("aria-label", petitEcran() ? (depliee ? "Replier la fiche" : "Déplier la fiche") : "Fermer la fiche");
+}
+
+function deplier(oui: boolean) {
+  if (depliee === oui) return;
+  depliee = oui;
+  majFiche();
+  if (fiche.classList.contains("ouverte")) ajusterDecalage();
+}
+
+btnFiche.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (petitEcran()) deplier(!depliee);
+  else void fermerFiche(true);
+});
+window.addEventListener("resize", majFiche);
+
+{
+  let appui: { y: number; tire: boolean } | null = null;
+  for (const zone of [el("fiche-entete"), el("fiche-poignee")]) {
+    zone.addEventListener("pointerdown", (e) => {
+      if (!petitEcran() || (e.target as HTMLElement).closest("button")) return;
+      appui = { y: e.clientY, tire: false };
+    });
+    zone.addEventListener("pointermove", (e) => {
+      if (!appui || appui.tire) return;
+      const dy = e.clientY - appui.y;
+      if (Math.abs(dy) < 24) return;
+      appui.tire = true;
+      deplier(dy < 0);
+    });
+    zone.addEventListener("pointerup", () => {
+      if (appui && !appui.tire) deplier(!depliee);
+      appui = null;
+    });
+    zone.addEventListener("pointercancel", () => (appui = null));
+  }
+}
+majFiche();
 
 export async function fermerFiche(garderSelection = false) {
   const etaitOuverte = fiche.classList.contains("ouverte");

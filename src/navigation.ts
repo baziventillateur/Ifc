@@ -167,8 +167,8 @@ window.addEventListener("pointercancel", (e) => {
 
 // Grand angle : dans une pièce, l'angle de vue normal (60°) ne montre qu'un bout de
 // mur. Le bouton sous l'œil élargit le champ, comme un objectif grand angle.
-const ANGLES = [60, 85, 105];
-const NOMS_ANGLES = ["normal", "large", "très large"];
+const ANGLES = [60, 85, 105, 120, 135, 150];
+const NOMS_ANGLES = ["normal", "large", "très large", "extra large", "géant", "maximum"];
 let angle = 0;
 const btnAngle = document.getElementById("btn-angle");
 

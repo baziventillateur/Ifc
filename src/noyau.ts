@@ -58,6 +58,61 @@ export const fragments = composants.get(OBC.FragmentsManager);
 fragments.init(urlOuvrier);
 monde.camera.controls.addEventListener("update", () => fragments.core.update());
 
+// --- Voir à travers les objets proches ------------------------------------------------
+// Les surfaces à moins de « distance » mètres de la caméra sont dessinées en trame
+// légère (un pixel sur n est laissé vide) : on devine ce qu'il y a derrière, par
+// exemple un tuyau qui traverse une poutre. Plus on est près, plus c'est transparent ;
+// au-delà de la distance, tout reste plein. Aucun tri ni recalcul : c'est le dessin
+// de chaque pixel qui décide, donc ça suit la caméra sans ralentir.
+const proche = { uProche: { value: 0 }, uProcheForce: { value: 0.45 } };
+const reglageProche = { actif: false, distance: 4, force: 0.45 };
+
+/** Ajoute l'effet « objets proches » à un matériau (maquettes et éléments déplacés). */
+export function brancherProche(materiau: THREE.Material) {
+  const m = materiau as THREE.Material & { __proche?: boolean };
+  if (m.__proche) return;
+  m.__proche = true;
+  const avant = m.onBeforeCompile;
+  const cleAvant = m.customProgramCacheKey;
+  m.onBeforeCompile = (shader, renderer) => {
+    avant?.call(m, shader, renderer);
+    if (!shader.vertexShader.includes("#include <project_vertex>")) return;
+    if (!shader.fragmentShader.includes("#include <clipping_planes_fragment>")) return;
+    shader.uniforms.uProche = proche.uProche;
+    shader.uniforms.uProcheForce = proche.uProcheForce;
+    shader.vertexShader = shader.vertexShader
+      .replace("void main() {", "varying float vProcheZ;\nvoid main() {")
+      .replace("#include <project_vertex>", "#include <project_vertex>\n  vProcheZ = -mvPosition.z;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace("void main() {", "uniform float uProche;\nuniform float uProcheForce;\nvarying float vProcheZ;\nvoid main() {")
+      .replace(
+        "#include <clipping_planes_fragment>",
+        `#include <clipping_planes_fragment>
+  if (uProche > 0.0 && vProcheZ < uProche) {
+    float procheF = uProcheForce * (1.0 - smoothstep(0.55, 1.0, vProcheZ / uProche));
+    float procheT = fract(52.9829189 * fract(dot(floor(gl_FragCoord.xy), vec2(0.06711056, 0.00583715))));
+    if (procheT < procheF) discard;
+  }`,
+      );
+  };
+  m.customProgramCacheKey = () => `${cleAvant ? cleAvant.call(m) : ""}|proche`;
+  m.needsUpdate = true;
+}
+
+function majProche() {
+  // En vue orthogonale, la distance à la caméra ne veut rien dire : effet coupé.
+  const ortho = monde.camera.projection.current === "Orthographic";
+  proche.uProche.value = reglageProche.actif && !ortho ? reglageProche.distance : 0;
+  proche.uProcheForce.value = reglageProche.force;
+  void fragments.core.update(true);
+}
+
+/** Règle l'effet « voir à travers les objets proches » (distance en mètres, force de 0 à 1). */
+export function reglerProche(r: { actif: boolean; distance: number; force: number }) {
+  Object.assign(reglageProche, r);
+  majProche();
+}
+
 // Évite le scintillement entre faces superposées.
 fragments.core.models.materials.list.onItemSet.add(({ value: materiau }) => {
   const m = materiau as any;
@@ -65,6 +120,7 @@ fragments.core.models.materials.list.onItemSet.add(({ value: materiau }) => {
     m.polygonOffset = true;
     m.polygonOffsetUnits = 1;
     m.polygonOffsetFactor = Math.random();
+    brancherProche(m);
   }
 });
 
@@ -343,7 +399,7 @@ monde.camera.projection.onChanged.add((cam: THREE.PerspectiveCamera | THREE.Orth
   monde.camera.controls.touches.three = pincer;
   // Les passes d'arêtes et d'ombrage gardaient l'ancienne caméra : image dédoublée.
   majCameraPost();
-  void fragments.core.update(true);
+  majProche();
   projectionModifiee.emit();
 });
 let bascule: Promise<void> | null = null;

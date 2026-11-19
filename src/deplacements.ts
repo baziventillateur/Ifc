@@ -3,7 +3,7 @@
 // donc revenir à l'original à tout moment, annuler, et enregistrer les déplacements
 // à part (par identifiant IFC) dans le projet.
 import * as THREE from "three";
-import { directionDepuisIfc, directionVersIfc, monde, Signal, type MaterialDefinition } from "./noyau";
+import { brancherProche, directionDepuisIfc, directionVersIfc, monde, Signal, type MaterialDefinition } from "./noyau";
 import { changement, maquettes, type Maquette } from "./registre";
 
 type Ids = Map<string, Set<number>>;
@@ -317,6 +317,7 @@ async function construire(m: Maquette, ids: number[]) {
       const groupe = new THREE.Group();
       const base = baseDe.get(id) ?? { couleur: new THREE.Color("#c9ced6"), opacite: 1 };
       const materiau = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, flatShading: true });
+      brancherProche(materiau);
       for (const md of geos[k] ?? []) {
         if (!md.positions || !md.indices || md.positions.length < 9) continue;
         const g = new THREE.BufferGeometry();

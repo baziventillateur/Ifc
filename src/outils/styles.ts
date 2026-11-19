@@ -2,7 +2,7 @@
 // lire les volumes quand tout est de la même teinte (gros œuvre en béton, par exemple).
 import * as THREE from "three";
 import * as OBF from "@thatopen/components-front";
-import { bouton, cree, definirProjection, estOrtho, nombre, projectionModifiee, rafraichir, reglerPost } from "../noyau";
+import { bouton, cree, definirProjection, estOrtho, nombre, projectionModifiee, rafraichir, reglerPost, reglerProche } from "../noyau";
 import { effacerPerso, nombrePerso, persoModifiee } from "../apparence";
 import { enregistrerOutil, marquerOutil } from "./panneau";
 import { interrupteur, note, titreSection } from "./ui";
@@ -152,6 +152,59 @@ enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
   };
   maj();
 
+  // --- Voir à travers les objets proches
+  const CLE_PROCHE = "nexbim-proche";
+  const procheR = { actif: false, distance: 4, force: 0.45 };
+  try {
+    const lu = JSON.parse(localStorage.getItem(CLE_PROCHE) || "{}");
+    if (typeof lu.actif === "boolean") procheR.actif = lu.actif;
+    if (lu.distance > 0) procheR.distance = Math.min(30, Math.max(0.5, Number(lu.distance)));
+    if (lu.force > 0) procheR.force = Math.min(0.9, Math.max(0.1, Number(lu.force)));
+  } catch {
+    // Réglages par défaut.
+  }
+  const blocProche = cree("div", "styles-perso");
+  const valeurDistance = cree("span", "valeur-reglage");
+  const valeurForce = cree("span", "valeur-reglage");
+  const majProcheUi = () => {
+    valeurDistance.textContent = `${nombre(procheR.distance, 1)} m`;
+    valeurForce.textContent = `${Math.round(procheR.force * 100)} %`;
+    reglagesProche.hidden = !procheR.actif;
+    try {
+      localStorage.setItem(CLE_PROCHE, JSON.stringify(procheR));
+    } catch {
+      // Gardé pour la session seulement.
+    }
+    reglerProche(procheR);
+  };
+  const pasDistance = (sens: number) => {
+    const pas = procheR.distance + (sens < 0 ? -0.01 : 0) < 2 ? 0.5 : procheR.distance + (sens < 0 ? -0.01 : 0) < 10 ? 1 : 5;
+    procheR.distance = Math.min(30, Math.max(0.5, Math.round((procheR.distance + sens * pas) * 2) / 2));
+    majProcheUi();
+  };
+  const pasForce = (sens: number) => {
+    procheR.force = Math.min(0.9, Math.max(0.1, Math.round((procheR.force + sens * 0.05) * 100) / 100));
+    majProcheUi();
+  };
+  const ligne = (libelle: string, valeur: HTMLElement, moins: () => void, plus: () => void) => {
+    const l = cree("div", "rangee reglage-pas");
+    l.append(cree("span", "petit", libelle), bouton("puce pas", "−", moins), valeur, bouton("puce pas", "+", plus));
+    return l;
+  };
+  const reglagesProche = cree("div", "styles-proche");
+  reglagesProche.append(
+    ligne("Jusqu'à", valeurDistance, () => pasDistance(-1), () => pasDistance(1)),
+    ligne("Transparence", valeurForce, () => pasForce(-1), () => pasForce(1)),
+  );
+  blocProche.append(
+    interrupteur("Voir à travers les objets proches", procheR.actif, (v) => {
+      procheR.actif = v;
+      majProcheUi();
+    }).racine,
+    reglagesProche,
+  );
+  majProcheUi();
+
   const persoEtat = note("");
   const persoBouton = bouton("btn", "Tout rétablir", () => void effacerPerso());
 
@@ -161,6 +214,7 @@ enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
     perso,
     titreSection("Vue"),
     vue,
+    blocProche,
     titreSection("Couleurs posées à la main"),
     persoEtat,
     persoBouton,

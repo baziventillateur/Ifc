@@ -2351,3 +2351,24 @@ body.selection-active .bandeau {
 .styles-perso[hidden] {
   display: none;
 }
+
+.styles-proche {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.styles-proche[hidden] {
+  display: none;
+}
+
+.reglage-pas > .petit {
+  flex: 1;
+}
+
+.valeur-reglage {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}

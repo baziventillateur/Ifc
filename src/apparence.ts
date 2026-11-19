@@ -3,6 +3,9 @@
 // isolement). Une seule source de vérité pour éviter que les outils se marchent dessus.
 import * as THREE from "three";
 import * as OBF from "@thatopen/components-front";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { composants, monde, rafraichir, reglerPost, Signal, type MaterialDefinition } from "./noyau";
 import { maquettes, reglages, type Maquette } from "./registre";
 
@@ -30,28 +33,115 @@ type Couche = { nom: string; style: MaterialDefinition; ids: Ids; focus: boolean
 const couches: Couche[] = [];
 const selection: Ids = new Map();
 
-// La sélection se voit par un contour jaune néon, visible à travers les autres éléments,
-// et un léger voile : l'élément garde sa couleur (et celle qu'on lui donne).
+// La sélection se voit par ses arêtes jaune néon : vives là où on les voit, estompées
+// à travers ce qui passe devant. L'élément garde sa couleur (et celle qu'on lui donne).
+// Au-delà de ARETES_MAX éléments, un contour de silhouette prend le relais (plus léger).
+const ARETES_MAX = 600;
+const NEON = 0xe8ff1a;
+const traitVu = new LineMaterial({ color: NEON, linewidth: 2.6, depthTest: true });
+const traitCache = new LineMaterial({ color: NEON, linewidth: 1.4, depthTest: false, transparent: true, opacity: 0.3 });
+const aretes = new THREE.Group();
+aretes.name = "aretes-selection";
+monde.scene.three.add(aretes);
+const tailleEcran = new THREE.Vector2();
+monde.renderer!.onBeforeUpdate.add(() => {
+  if (!aretes.children.length) return;
+  monde.renderer!.three.getSize(tailleEcran);
+  if (!traitVu.resolution.equals(tailleEcran)) {
+    traitVu.resolution.copy(tailleEcran);
+    traitCache.resolution.copy(tailleEcran);
+  }
+  // Les coupes s'appliquent aussi aux arêtes de la sélection.
+  const plans = monde.renderer!.clippingPlanes;
+  if (traitVu.clippingPlanes !== plans) traitVu.clippingPlanes = traitCache.clippingPlanes = plans;
+  // Une maquette masquée cache aussi ses arêtes.
+  aretes.visible = [...selection.keys()].some((mid) => maquettes.get(mid)?.modele.object.visible);
+});
+let tourAretes = 0;
+
+function viderAretes() {
+  for (const o of [...aretes.children]) {
+    aretes.remove(o);
+    (o as LineSegments2).geometry.dispose();
+  }
+}
+
+/** Arêtes des éléments sélectionnés (géométrie lue dans les maquettes). */
+async function dessinerAretes(tour: number) {
+  const points: number[] = [];
+  const a = new THREE.Vector3();
+  for (const [mid, ids] of selection) {
+    const m = maquettes.get(mid);
+    if (!m || !m.modele.object.visible) continue;
+    const geos = await m.modele.getItemsGeometry([...ids]);
+    if (tour !== tourAretes) return false;
+    m.modele.object.updateMatrixWorld();
+    for (const liste of geos) {
+      for (const md of liste) {
+        if (!md.positions || !md.indices) continue;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.BufferAttribute(Float32Array.from(md.positions), 3));
+        g.setIndex(new THREE.BufferAttribute(md.indices, 1));
+        const bords = new THREE.EdgesGeometry(g, 25);
+        // La matrice arrive du worker sous forme d'objet simple.
+        const brute = md.transform as unknown as { elements?: number[] } | number[];
+        const matrice = new THREE.Matrix4()
+          .fromArray(Array.isArray(brute) ? brute : (brute.elements ?? new THREE.Matrix4().elements))
+          .premultiply(m.modele.object.matrixWorld);
+        const pos = bords.getAttribute("position");
+        for (let i = 0; i < pos.count; i++) {
+          a.fromBufferAttribute(pos, i).applyMatrix4(matrice);
+          points.push(a.x, a.y, a.z);
+        }
+        g.dispose();
+        bords.dispose();
+      }
+    }
+  }
+  if (tour !== tourAretes) return false;
+  viderAretes();
+  if (!points.length) return true;
+  const geo = new LineSegmentsGeometry().setPositions(points);
+  const cachees = new LineSegments2(geo, traitCache);
+  cachees.renderOrder = 998;
+  const vues = new LineSegments2(geo, traitVu);
+  vues.renderOrder = 999;
+  aretes.add(cachees, vues);
+  return true;
+}
+
 let contour: OBF.Outliner | null = null;
 
 async function majContour() {
-  if (!selection.size) {
-    contour?.clean();
+  const tour = ++tourAretes;
+  const n = [...selection.values()].reduce((t, ids) => t + ids.size, 0);
+  contour?.clean();
+  if (n === 0) {
+    viderAretes();
     reglerPost("selection", false);
     return;
   }
-  // Le contour vit dans la post-production : on l'allume avant de le créer.
+  if (n <= ARETES_MAX) {
+    reglerPost("selection", false);
+    try {
+      if (await dessinerAretes(tour)) return;
+    } catch (e) {
+      console.warn("Arêtes de sélection", e);
+    }
+    if (tour !== tourAretes) return;
+  }
+  // Grande sélection : contour de silhouette (dans la post-production).
+  viderAretes();
   reglerPost("selection", true);
   if (!contour) {
     contour = composants.get(OBF.Outliner);
     contour.world = monde;
     contour.color = new THREE.Color("#e8ff1a");
-    contour.thickness = 3;
+    contour.thickness = 2;
     contour.fillColor = new THREE.Color("#f0ff3d");
-    contour.fillOpacity = 0.16;
+    contour.fillOpacity = 0.12;
     contour.enabled = true;
   }
-  contour.clean();
   const carte: Record<string, Set<number>> = {};
   for (const [mid, ids] of selection) carte[mid] = new Set(ids);
   await contour.addItems(carte);

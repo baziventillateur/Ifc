@@ -1,5 +1,5 @@
 // Point d'entrée : commandes de la barre du haut, outils, démarrage.
-import { el, fragments, monde } from "./noyau";
+import { definirProjection, el, estOrtho, fragments, monde, projectionModifiee } from "./noyau";
 import { maquettes } from "./registre";
 import { recadrer } from "./maquettes";
 import { attendreSession } from "./nuage/compte";
@@ -28,6 +28,22 @@ el("btn-ajouter").addEventListener("click", () => {
   if (demanderDepot()) champFichier.click();
 });
 el("btn-recadrer").addEventListener("click", () => void recadrer());
+
+// Vue orthogonale (sans perspective) ou en perspective : un seul bouton, et la touche O.
+const btnOrtho = el("btn-ortho");
+const basculerProjection = () => void definirProjection(estOrtho() ? "Perspective" : "Orthographic");
+btnOrtho.addEventListener("click", basculerProjection);
+projectionModifiee.on(() => {
+  btnOrtho.classList.toggle("actif", estOrtho());
+  btnOrtho.setAttribute("aria-pressed", String(estOrtho()));
+});
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "o" && e.key !== "O") return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const cible = e.target as HTMLElement | null;
+  if (cible?.closest("input, textarea, select, [contenteditable]")) return;
+  basculerProjection();
+});
 
 champFichier.addEventListener("change", () => {
   const fichiers = [...(champFichier.files ?? [])];

@@ -127,9 +127,12 @@ export function ajusterDecalage(transition = true) {
     if (fiche?.classList.contains("ouverte")) bas = Math.max(bas, fiche.offsetHeight);
   }
   const haut = (document.querySelector(".barre") as HTMLElement | null)?.offsetHeight ?? 0;
-  const cam = monde.camera.three as THREE.PerspectiveCamera;
-  const fov = THREE.MathUtils.degToRad(cam.fov ?? 60);
-  const hauteurVue = 2 * monde.camera.controls.distance * Math.tan(fov / 2);
+  const cam = monde.camera.three;
+  const hauteurVue = (cam as THREE.OrthographicCamera).isOrthographicCamera
+    ? ((cam as THREE.OrthographicCamera).top - (cam as THREE.OrthographicCamera).bottom) /
+      (cam as THREE.OrthographicCamera).zoom
+    : 2 * monde.camera.controls.distance *
+      Math.tan(THREE.MathUtils.degToRad((cam as THREE.PerspectiveCamera).fov ?? 60) / 2);
   const d = bas > 0 ? ((bas - haut) / 2 / H) * hauteurVue : 0;
   recentrerPivot();
   decalageMise = d;
@@ -306,4 +309,37 @@ export function boutonIcone(nom: string, action: () => void, titre: string, clas
   const b = bouton(classe, "", action, titre);
   b.append(icone(nom));
   return b;
+}
+
+// --- Projection : perspective ou orthogonale (sans perspective) -------------------
+// En orthogonale, ce qui garde la même taille à l'écran quelle que soit la distance.
+// Au retour en perspective, on garde le cadrage obtenu en orthogonale.
+export const projectionModifiee = new Signal();
+monde.camera.projection.matchOrthoDistanceEnabled = true;
+// Reculer loin la caméra orthogonale ne change rien à l'image ; on voit tout le site.
+monde.camera.threeOrtho.far = 5000;
+monde.camera.projection.onChanged.add((cam: THREE.PerspectiveCamera | THREE.OrthographicCamera) => {
+  for (const [, modele] of fragments.list) modele.useCamera(cam);
+  const ortho = monde.camera.projection.current === "Orthographic";
+  // Au doigt, pincer agrandit la vue (zoom) au lieu d'avancer la caméra.
+  const ACTION = (monde.camera.controls.constructor as unknown as { ACTION: Record<string, number> }).ACTION;
+  const pincer = (ortho ? ACTION.TOUCH_ZOOM_TRUCK : ACTION.TOUCH_DOLLY_TRUCK) as never;
+  monde.camera.controls.touches.two = pincer;
+  monde.camera.controls.touches.three = pincer;
+  void fragments.core.update(true);
+  projectionModifiee.emit();
+});
+let bascule: Promise<void> | null = null;
+
+export function estOrtho() {
+  return monde.camera.projection.current === "Orthographic";
+}
+
+export async function definirProjection(vers: "Perspective" | "Orthographic") {
+  if (bascule) await bascule;
+  if (monde.camera.projection.current === vers) return;
+  recentrerPivot();
+  bascule = monde.camera.projection.set(vers).finally(() => (bascule = null));
+  await bascule;
+  ajusterDecalage(false);
 }

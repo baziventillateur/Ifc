@@ -21,7 +21,6 @@ canvas.addEventListener("pointerdown", (e) => {
   if (enCours.size > 1) return;
   if (e.pointerType === "mouse" && e.button !== 0) return;
   if (e.shiftKey) return;
-  if (monde.camera.projection.current !== "Perspective") return;
   const mien = ++tour;
   pivotPose = false;
   depart = { x: e.clientX, y: e.clientY, id: e.pointerId };

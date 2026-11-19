@@ -13,6 +13,7 @@ import {
   monde,
   demanderConfirmation,
   recentrerPivot,
+  definirProjection,
   telecharger,
   versIfc,
 } from "../noyau";
@@ -104,6 +105,8 @@ async function allerA(r: Remarque) {
       if (!b.isEmpty()) distance = Math.max(2, p.distanceTo(b.getCenter(new THREE.Vector3())));
     }
     const c = p.clone().addScaledVector(d, distance);
+    // Le point de vue d'une remarque est une vue en perspective.
+    await definirProjection("Perspective");
     recentrerPivot();
     await monde.camera.controls.setLookAt(p.x, p.y, p.z, c.x, c.y, c.z, true);
   } else if (ids.size) {

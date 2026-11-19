@@ -2309,3 +2309,45 @@ body.selection-active .bandeau {
   text-align: center;
   font-weight: 650;
 }
+
+/* --- Outil Styles : styles tout faits ---------------------------------------------- */
+.styles-choix {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+
+.style-tuile {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 2px 5px;
+  border: 1px solid var(--bord);
+  border-radius: 8px;
+  background: #1b222b;
+  color: var(--doux);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.style-tuile.actif {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(255, 140, 26, 0.1);
+}
+
+.styles-perso {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 7px;
+  border: 1px solid var(--bord);
+  border-radius: 8px;
+}
+
+.styles-perso[hidden] {
+  display: none;
+}

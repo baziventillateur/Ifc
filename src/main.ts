@@ -1,5 +1,5 @@
 // Point d'entrée : commandes de la barre du haut, outils, démarrage.
-import { definirProjection, el, estOrtho, fragments, monde, projectionModifiee } from "./noyau";
+import { definirProjection, el, estOrtho, fragments, lanceur, monde, projectionModifiee } from "./noyau";
 import { maquettes } from "./registre";
 import { recadrer } from "./maquettes";
 import { attendreSession } from "./nuage/compte";
@@ -16,6 +16,7 @@ import "./outils/filtres";
 import "./outils/recherche";
 import "./outils/quantites";
 import "./outils/clashs";
+import "./outils/modifier";
 import "./outils/remarques";
 import "./outils/assistant";
 import "./outils/styles";
@@ -73,6 +74,6 @@ async function demarrer() {
 void demarrer();
 
 if (import.meta.env.DEV) {
-  (window as any).__visio = { fragments, monde, maquettes };
+  (window as any).__visio = { fragments, monde, maquettes, lanceur };
   import("./apparence").then((a) => ((window as any).__visio.apparence = a));
 }

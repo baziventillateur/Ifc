@@ -2279,3 +2279,33 @@ body.selection-active .bandeau {
   flex-direction: column;
   gap: 6px;
 }
+
+/* --- Outil Modifier : déplacement d'éléments ------------------------------------- */
+.deplacer-grille {
+  display: grid;
+  grid-template-columns: 1fr auto 64px auto auto;
+  align-items: center;
+  gap: 4px 5px;
+}
+
+.deplacer-grille.eteint {
+  opacity: 0.5;
+}
+
+.deplacer-axe {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.deplacer-grille .champ.nombre {
+  width: 64px;
+  text-align: right;
+  padding: 4px 6px;
+}
+
+.puce.pas {
+  min-width: 26px;
+  padding: 3px 0;
+  text-align: center;
+  font-weight: 650;
+}

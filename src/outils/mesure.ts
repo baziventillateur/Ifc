@@ -4,6 +4,7 @@
 //   avec une ligne de rappel vers le premier. Mode libre pour les cotes obliques.
 // - Surface : polygone de points, aire (m²) et périmètre.
 // Tout est dessiné par-dessus l'image (SVG) : visible à travers les murs, net à tout zoom.
+import { completerTir } from "../deplacements";
 import * as THREE from "three";
 import * as FRAGS from "@thatopen/fragments";
 import { alerte, bouton, boutonIcone, cree, el, lanceur, monde, nombre } from "../noyau";
@@ -240,11 +241,14 @@ let survol: Point | null = null;
 async function viserMesure(e: { clientX: number; clientY: number }): Promise<Point | null> {
   const r = monde.renderer!.three.domElement.getBoundingClientRect();
   const position = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-  const hit: any = await lanceur.castRay({
+  const hit: any = completerTir(
+    await lanceur.castRay({
+      position,
+      items: [],
+      snappingClasses: [FRAGS.SnappingClass.POINT, FRAGS.SnappingClass.LINE, FRAGS.SnappingClass.FACE],
+    } as any),
     position,
-    items: [],
-    snappingClasses: [FRAGS.SnappingClass.POINT, FRAGS.SnappingClass.LINE, FRAGS.SnappingClass.FACE],
-  } as any);
+  );
   if (!hit?.point) return null;
   return {
     point: hit.point.clone(),

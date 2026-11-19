@@ -2,6 +2,7 @@
 // 1. Tri rapide par boîtes englobantes (recouvrement supérieur à la tolérance sur les 3 axes).
 // 2. Contrôle précis sur la géométrie réelle : intersection des surfaces (arbre BVH),
 //    ou élément entièrement noyé dans l'autre.
+import { boitesDe, decalageDe } from "./deplacements";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { MeshBVH } from "three-mesh-bvh";
@@ -32,7 +33,7 @@ async function boites(m: Maquette, elements: Element[]): Promise<Boite[]> {
   const PAQUET = 4000;
   for (let i = 0; i < elements.length; i += PAQUET) {
     const lot = elements.slice(i, i + PAQUET);
-    const bs = await m.modele.getBoxes(lot.map((e) => e.id));
+    const bs = await boitesDe(m, lot.map((e) => e.id));
     lot.forEach((e, k) => {
       if (bs[k] && !bs[k].isEmpty()) res.push({ e, b: bs[k] });
     });
@@ -66,6 +67,8 @@ class Geometries {
           g.setAttribute("position", new THREE.BufferAttribute(Float32Array.from(md.positions), 3));
           g.setIndex(new THREE.BufferAttribute(Uint32Array.from(md.indices), 1));
           g.applyMatrix4(monde.clone().multiply(md.transform));
+          const decalage = decalageDe(this.m.id, id);
+          if (decalage) g.translate(decalage.x, decalage.y, decalage.z);
           morceaux.push(g);
         }
         if (!morceaux.length) {

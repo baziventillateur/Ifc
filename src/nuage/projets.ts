@@ -1,6 +1,12 @@
 // Projet dans le cloud : maquettes déposées, personnes invitées, compte, panneau admin.
+import {
+  deplacementsModifies,
+  exporter as exporterDeplacements,
+  importer as importerDeplacements,
+  type Donnees,
+} from "../deplacements";
 import type { User } from "@supabase/supabase-js";
-import { alerte, attente, bouton, cree, el } from "../noyau";
+import { alerte, attente, bouton, cree, el, Signal } from "../noyau";
 import { maquettes as affichees } from "../registre";
 import {
   ajouterIfc,
@@ -171,7 +177,69 @@ async function chargerDetails() {
   etat.personnes = (p ?? []) as Personne[];
 }
 
+// --- Modifications (éléments déplacés) enregistrées dans le projet -----------------
+
+let modifsLues = "{}";
+let modifsPretes = false;
+let minuterieModifs = 0;
+/** Émis quand l'état d'enregistrement des modifications change. */
+export const enregistrementModifie = new Signal();
+let etatModifs: "" | "enregistre" | "erreur" = "";
+
+/** Où vont les modifications : dans le projet, ou seulement sur cet écran. */
+export function enregistrementModifs(): { mode: "projet" | "invite" | "exemple"; etat: typeof etatModifs } {
+  if (!etat.courant || etat.fichiers.length === 0) return { mode: "exemple", etat: "" };
+  return { mode: createur() ? "projet" : "invite", etat: etatModifs };
+}
+
+async function chargerModifications() {
+  modifsPretes = false;
+  etatModifs = "";
+  let donnees: Donnees | null = null;
+  if (etat.courant && etat.fichiers.length > 0) {
+    const { data } = await nuage
+      .from("modifications")
+      .select("deplacements")
+      .eq("projet_id", etat.courant.id)
+      .maybeSingle();
+    donnees = (data?.deplacements as Donnees | undefined) ?? null;
+  }
+  await importerDeplacements(donnees);
+  modifsLues = JSON.stringify(await exporterDeplacements());
+  modifsPretes = true;
+  enregistrementModifie.emit();
+}
+
+async function enregistrerModifications() {
+  const projet = etat.courant;
+  if (!modifsPretes || !projet || !createur() || etat.fichiers.length === 0) return;
+  const donnees = await exporterDeplacements();
+  const texte = JSON.stringify(donnees);
+  if (texte === modifsLues) return;
+  const { error } = await nuage
+    .from("modifications")
+    .upsert({ projet_id: projet.id, deplacements: donnees, maj_le: new Date().toISOString(), maj_par: etat.moi.id });
+  if (etat.courant !== projet) return;
+  if (error) {
+    console.error("Enregistrement des modifications", error);
+    etatModifs = "erreur";
+  } else {
+    modifsLues = texte;
+    etatModifs = "enregistre";
+  }
+  enregistrementModifie.emit();
+}
+
+deplacementsModifies.on(() => {
+  if (!modifsPretes) return;
+  window.clearTimeout(minuterieModifs);
+  minuterieModifs = window.setTimeout(() => void enregistrerModifications(), 900);
+});
+
 async function ouvrirProjet(projet: Projet | null) {
+  modifsPretes = false;
+  window.clearTimeout(minuterieModifs);
+  await importerDeplacements(null);
   etat.courant = projet;
   try {
     if (projet) localStorage.setItem(CLE_PROJET, projet.id);
@@ -198,6 +266,7 @@ async function ouvrirProjet(projet: Projet | null) {
       })),
     );
   }
+  await chargerModifications().catch((e) => console.error("Modifications du projet", e));
   majBandeau();
 }
 

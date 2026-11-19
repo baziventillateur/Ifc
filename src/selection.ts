@@ -1,5 +1,6 @@
 // Sélection multiple, masquage et isolement : Ctrl+clic, Maj+glisser, raccourcis
 // clavier (H, Suppr, I, Maj+H, Échap), barre d'actions et outil « Sélection ».
+import { boitesDe } from "./deplacements";
 import * as THREE from "three";
 import { bouton, cree, monde } from "./noyau";
 import { maquettes } from "./registre";
@@ -190,7 +191,7 @@ async function selectionnerRectangle(x1: number, y1: number, x2: number, y2: num
     const pris = suivante.get(m.id) ?? new Set<number>();
     for (let i = 0; i < ids.length; i += PAQUET) {
       const lot = ids.slice(i, i + PAQUET);
-      const boites = await m.modele.getBoxes(lot);
+      const boites = await boitesDe(m, lot);
       lot.forEach((id, k) => {
         const b = boites[k];
         if (!b || b.isEmpty()) return;

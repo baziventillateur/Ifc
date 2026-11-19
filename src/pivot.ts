@@ -1,6 +1,7 @@
 // Navigation au doigt et à la souris. Au premier doigt (ou clic gauche), le point de la
 // maquette sous le pointeur devient le centre de rotation, sans faire bouger la vue ;
 // la vitesse de rotation et de zoom suit celle du geste.
+import { completerTir } from "./deplacements";
 import * as THREE from "three";
 import { cree, lanceur, monde } from "./noyau";
 
@@ -30,7 +31,8 @@ canvas.addEventListener("pointerdown", (e) => {
     -((e.clientY - r.top) / r.height) * 2 + 1,
   );
   void (lanceur.castRay({ position, items: [] } as any) as Promise<any>)
-    .then((hit) => {
+    .then((brut) => {
+      const hit = completerTir(brut, position);
       if (mien !== tour || !hit?.point) return;
       monde.camera.controls.setOrbitPoint(hit.point.x, hit.point.y, hit.point.z);
       pivotPose = true;

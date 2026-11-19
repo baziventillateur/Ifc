@@ -8,6 +8,14 @@ import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeome
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { composants, monde, rafraichir, reglerPost, Signal, type MaterialDefinition } from "./noyau";
 import { maquettes, reglages, type Maquette } from "./registre";
+import {
+  apresApercu,
+  boiteFusion,
+  brancherApparence,
+  decalageDe,
+  deplacesDe,
+  synchroniser,
+} from "./deplacements";
 
 export type Ids = Map<string, Set<number>>;
 
@@ -75,9 +83,12 @@ async function dessinerAretes(tour: number) {
     if (!m || !m.modele.object.visible) continue;
     const geos = await m.modele.getItemsGeometry([...ids]);
     if (tour !== tourAretes) return false;
+    if (geos.length !== ids.size) continue;
     m.modele.object.updateMatrixWorld();
-    for (const liste of geos) {
-      for (const md of liste) {
+    const idsListe = [...ids];
+    for (let k = 0; k < geos.length; k++) {
+      const decalage = decalageDe(mid, idsListe[k]);
+      for (const md of geos[k]) {
         if (!md.positions || !md.indices) continue;
         const g = new THREE.BufferGeometry();
         g.setAttribute("position", new THREE.BufferAttribute(Float32Array.from(md.positions), 3));
@@ -88,6 +99,7 @@ async function dessinerAretes(tour: number) {
         const matrice = new THREE.Matrix4()
           .fromArray(Array.isArray(brute) ? brute : (brute.elements ?? new THREE.Matrix4().elements))
           .premultiply(m.modele.object.matrixWorld);
+        if (decalage) matrice.premultiply(new THREE.Matrix4().makeTranslation(decalage.x, decalage.y, decalage.z));
         const pos = bords.getAttribute("position");
         for (let i = 0; i < pos.count; i++) {
           a.fromBufferAttribute(pos, i).applyMatrix4(matrice);
@@ -305,9 +317,33 @@ export function appliquerApparence(ids?: string[]) {
       if (ids && !ids.includes(m.id)) continue;
       await appliquerModele(m);
     }
+    await synchroniserDeplaces();
     await rafraichir();
   });
 }
+
+// --- Éléments déplacés : ils suivent l'apparence et la visibilité des autres -----------
+
+function estAffiche(m: Maquette, id: number) {
+  if (masquesFiltre.get(m.id)?.has(id) || masquesManuels.get(m.id)?.has(id)) return false;
+  return !isolement || !!isolement.get(m.id)?.has(id);
+}
+
+const synchroniserDeplaces = () =>
+  synchroniser((m, id) => ({ visible: estAffiche(m, id), style: styleDe(m, id) }));
+
+brancherApparence(async () => {
+  await appliquerVisibilite();
+  await enchainer(async () => {
+    await majContour();
+    await rafraichir();
+  });
+});
+apresApercu.on(() => {
+  void enchainer(async () => {
+    await majContour();
+  });
+});
 
 /** Définit (ou retire avec null) une couche de surlignage. */
 export function definirCouche(nom: string, styleCouche: MaterialDefinition, ids: Ids | null, focus = false) {
@@ -451,7 +487,12 @@ export function appliquerVisibilite() {
   return enchainer(async () => {
     for (const m of maquettes.values()) {
       tousIds.delete(m.id);
-      const filtre = new Set([...(masquesFiltre.get(m.id) ?? []), ...(masquesManuels.get(m.id) ?? [])]);
+      // Les éléments déplacés sont redessinés à part : on les retire de leur maquette.
+      const filtre = new Set([
+        ...(masquesFiltre.get(m.id) ?? []),
+        ...(masquesManuels.get(m.id) ?? []),
+        ...deplacesDe(m.id),
+      ]);
       const garder = isolement ? (isolement.get(m.id) ?? new Set<number>()) : null;
       await m.modele.setVisible(undefined, true);
       if (garder) {
@@ -461,6 +502,7 @@ export function appliquerVisibilite() {
         await m.modele.setVisible([...filtre], false);
       }
     }
+    await synchroniserDeplaces();
     await rafraichir();
   });
 }
@@ -475,7 +517,7 @@ export async function boiteDe(ids: Ids) {
   for (const [mid, set] of ids) {
     const m = maquettes.get(mid);
     if (!m || !set.size) continue;
-    boite.union(await m.modele.getMergedBox([...set]));
+    boite.union(await boiteFusion(m, [...set]));
   }
   return boite;
 }

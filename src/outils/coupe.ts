@@ -1,6 +1,7 @@
 // Plans de coupe : horizontal (par niveau), vertical (selon X ou Y), et sur une face :
 // on touche une surface, le plan s'aligne sur elle, puis la poignée « ciseaux » le
 // déplace perpendiculairement à la face.
+import { boitesDe, completerTir } from "../deplacements";
 import * as THREE from "three";
 import { alerte, bouton, cree, el, lanceur, monde, nombre, rafraichir, versIfc } from "../noyau";
 import { definirModeClic } from "../fiche";
@@ -116,7 +117,7 @@ poignee.addEventListener("pointercancel", lacher);
 async function choisirFace(e: PointerEvent) {
   const r = monde.renderer!.three.domElement.getBoundingClientRect();
   const position = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-  const hit: any = await lanceur.castRay({ position, items: [] } as any);
+  const hit: any = completerTir(await lanceur.castRay({ position, items: [] } as any), position);
   definirModeClic(null);
   if (!hit?.point) {
     alerte("Touchez une surface de la maquette.", 2500);
@@ -321,7 +322,7 @@ enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
         if (!Number.isFinite(alt)) continue;
         const ids = (parNiveau.get(nom + "|p") ?? parNiveau.get(nom + "|a") ?? []).slice(0, 300);
         if (!ids.length) continue;
-        const boites = await m.modele.getBoxes(ids);
+        const boites = await boitesDe(m, ids);
         const bas = boites.map((b) => b.min.y).sort((a, b) => a - b);
         const y = bas[Math.floor(bas.length * 0.2)];
         const avant = sols.get(nom);

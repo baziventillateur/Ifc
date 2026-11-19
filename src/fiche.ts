@@ -1,4 +1,5 @@
 // Toucher un élément : sélection, fiche d'informations et actions rapides.
+import { boiteFusion, completerTir } from "./deplacements";
 import * as THREE from "three";
 import type * as FRAGS from "@thatopen/fragments";
 import { ajusterDecalage, bouton, cadrer, cree, el, lanceur, monde, nombre, Signal } from "./noyau";
@@ -50,7 +51,8 @@ export async function viser(
   const traversees = [...maquettes.values()].filter((m) => m.transparente && m.modele.object.visible);
   for (const m of traversees) m.modele.object.visible = false;
   try {
-    const hit: any = await lanceur.castRay({ position: ndc(e), items: [], snappingClasses: accrochage });
+    const position = ndc(e);
+    const hit: any = completerTir(await lanceur.castRay({ position, items: [], snappingClasses: accrochage }), position);
     if (!hit || hit.localId === undefined || !hit.fragments) return null;
     return { modele: hit.fragments.modelId, id: hit.localId, point: hit.point.clone() };
   } finally {
@@ -163,7 +165,7 @@ export async function montrerElement(idModele: string, idLocal: number, centrer 
 
   const actions = cree("div", "fiche-actions");
   actions.append(
-    bouton("puce", "Centrer", async () => cadrer(await m.modele.getMergedBox([idLocal]), 2.2)),
+    bouton("puce", "Centrer", async () => cadrer(await boiteFusion(m, [idLocal]), 2.2)),
     bouton("puce", isolementActif() ? "Tout réafficher" : "Isoler", async () => {
       await definirIsolement(isolementActif() ? null : idsDe(idModele, idLocal));
       if (courant) await montrerElement(courant.modele, courant.id, false);
@@ -219,7 +221,7 @@ export async function montrerElement(idModele: string, idLocal: number, centrer 
 
   ficheCorps.scrollTop = 0;
   fiche.classList.add("ouverte");
-  if (centrer) await cadrer(await m.modele.getMergedBox([idLocal]), 2.2);
+  if (centrer) await cadrer(await boiteFusion(m, [idLocal]), 2.2);
 }
 
 export const elementCourant = () => courant;

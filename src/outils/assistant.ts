@@ -3,9 +3,10 @@
 // compte l'essai (3 questions par compte). Les fichiers IFC ne sont jamais envoyés :
 // Claude appelle des outils qui s'exécutent ici, et ne reçoit que leurs réponses
 // (noms d'éléments, nombres, quantités).
-import { alerte, bouton, cadrer, cree } from "../noyau";
+import { alerte, bouton, cadrer, cree, directionDepuisIfc } from "../noyau";
 import { maquettes } from "../registre";
-import { boiteDe, definirCouche, definirIsolement, retirerCouche, STYLES } from "../apparence";
+import { boiteDe, definirCouche, definirIsolement, retirerCouche, selectionIds, STYLES } from "../apparence";
+import { annuler, deplacer, LIMITE_DEPLACES, nombreDeplaces, remettre } from "../deplacements";
 import { libelleCategorie } from "../libelles";
 import { indexDeTout, SANS_NIVEAU } from "../index-elements";
 import { lister, quantifier, tousLesElements, versIds, type Filtre, type Regroupement } from "../requetes";
@@ -89,6 +90,23 @@ const OUTILS = [
         tolerance_cm: { type: "number", description: "Contacts ignorés en dessous (cm), 1 par défaut." },
       },
       required: ["maquette_a", "maquette_b"],
+    },
+  },
+  {
+    name: "deplacer_elements",
+    description:
+      "Déplace des éléments (mode Modifier) : la sélection en cours de l'utilisateur (selection=true) ou les éléments filtrés. Décalage en centimètres, ajouté à leur position actuelle : est_cm (axe X), nord_cm (axe Y), haut_cm (hauteur). remettre=true les remet à leur place d'origine ; annuler=true annule le dernier déplacement. La maquette IFC d'origine n'est pas modifiée ; le déplacement est enregistré dans le projet et l'utilisateur peut l'annuler dans l'outil Modifier. Vérifie d'abord avec rechercher_elements que le filtre vise bien les bons éléments.",
+    input_schema: {
+      type: "object",
+      properties: {
+        ...proprietesFiltre,
+        selection: { type: "boolean", description: "Déplacer la sélection en cours plutôt qu'un filtre." },
+        est_cm: { type: "number" },
+        nord_cm: { type: "number" },
+        haut_cm: { type: "number" },
+        remettre: { type: "boolean" },
+        annuler: { type: "boolean" },
+      },
     },
   },
 ];
@@ -195,6 +213,34 @@ async function executer(nom: string, entree: Record<string, any>): Promise<unkno
         })),
       };
     }
+    case "deplacer_elements": {
+      if (entree.annuler) {
+        await annuler();
+        return { ok: true, elements_deplaces_au_total: nombreDeplaces() };
+      }
+      let ids = selectionIds();
+      if (!entree.selection) {
+        if (!Object.keys(filtreDe(entree)).length) return { erreur: "Précise un filtre, ou selection=true." };
+        ids = versIds(lister(filtreDe(entree), await tousLesElements(toutes)));
+      }
+      const n = [...ids.values()].reduce((t, s) => t + s.size, 0);
+      if (!n) return { erreur: entree.selection ? "Aucun élément sélectionné." : "Aucun élément ne correspond." };
+      if (n > LIMITE_DEPLACES) return { erreur: `Trop d'éléments (${n}) : ${LIMITE_DEPLACES} au plus.` };
+      try {
+        if (entree.remettre) {
+          const remis = await remettre(ids);
+          return { remis_en_place: remis };
+        }
+        const [x, y, z] = [entree.est_cm, entree.nord_cm, entree.haut_cm].map((v) => (Number(v) || 0) / 100);
+        if (!x && !y && !z) return { erreur: "Donne un décalage : est_cm, nord_cm ou haut_cm." };
+        if (Math.max(Math.abs(x), Math.abs(y), Math.abs(z)) > 1000) return { erreur: "Décalage trop grand (10 km au plus)." };
+        await deplacer(ids, directionDepuisIfc(x, y, z));
+        await cadrer(await boiteDe(ids), 1.6);
+        return { deplaces: n, decalage_cm: { est: x * 100, nord: y * 100, haut: z * 100 }, elements_deplaces_au_total: nombreDeplaces() };
+      } catch (e) {
+        return { erreur: e instanceof Error ? e.message : "Déplacement impossible." };
+      }
+    }
   }
   return { erreur: `Outil inconnu : ${nom}` };
 }
@@ -209,7 +255,8 @@ Règles :
 - Le volume est mesuré sur la géométrie ; surfaces et longueurs sont celles déclarées dans l'IFC.
 - Pour « béton », cherche dans le type et les propriétés (texte: beton) et précise ce que tu as compté.
 - Quand l'utilisateur veut voir des éléments, appelle afficher_elements.
-- Pour les clashs, résume par niveau et par type de conflit, puis propose des solutions concrètes de chantier (dévoiement de réseau, réservation à créer, changement de hauteur, déplacement), en signalant ce qui demande l'avis du bureau d'études.`;
+- Pour les clashs, résume par niveau et par type de conflit, puis propose des solutions concrètes de chantier (dévoiement de réseau, réservation à créer, changement de hauteur, déplacement), en signalant ce qui demande l'avis du bureau d'études.
+- Tu peux déplacer des éléments avec deplacer_elements (réservation, gaine, équipement…) quand l'utilisateur le demande : la sélection en cours (selection=true) ou un filtre précis. Donne ensuite le décalage appliqué et rappelle qu'il s'annule dans l'outil Modifier. C'est une étude dans la visionneuse : l'IFC d'origine n'est pas modifié, le bureau d'études doit reporter le changement.`;
 }
 
 // Rendu très simple : paragraphes, listes, **gras**. Le texte est échappé.

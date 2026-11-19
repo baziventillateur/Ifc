@@ -4,12 +4,15 @@
 import { completerTir } from "./deplacements";
 import * as THREE from "three";
 import { cree, lanceur, monde } from "./noyau";
+import { maquettes } from "./registre";
 
 const canvas = monde.renderer!.three.domElement;
 const enCours = new Set<number>();
 let tour = 0;
 let depart: { x: number; y: number; id: number } | null = null;
 let pivotPose = false;
+/** Distance de la caméra à ce qu'on a touché : c'est elle qui donne l'allure du zoom. */
+let profondeur: number | null = null;
 
 // Petit repère du pivot, visible pendant la rotation.
 const repere = cree("div", "repere-pivot");
@@ -24,6 +27,7 @@ canvas.addEventListener("pointerdown", (e) => {
   if (e.shiftKey) return;
   const mien = ++tour;
   pivotPose = false;
+  profondeur = null;
   depart = { x: e.clientX, y: e.clientY, id: e.pointerId };
   const r = canvas.getBoundingClientRect();
   const position = new THREE.Vector2(
@@ -35,6 +39,7 @@ canvas.addEventListener("pointerdown", (e) => {
       const hit = completerTir(brut, position);
       if (mien !== tour || !hit?.point) return;
       monde.camera.controls.setOrbitPoint(hit.point.x, hit.point.y, hit.point.z);
+      profondeur = monde.camera.three.position.distanceTo(hit.point);
       pivotPose = true;
     })
     .catch(() => {});
@@ -58,6 +63,24 @@ const lacher = (e: PointerEvent) => {
 };
 window.addEventListener("pointerup", lacher);
 window.addEventListener("pointercancel", lacher);
+
+/**
+ * Le zoom de la bibliothèque avance en proportion de la distance au centre de la vue,
+ * qui devient minuscule après quelques zooms : il fallait alors pincer plusieurs fois.
+ * On le ramène à la distance réelle de ce qui est sous les doigts.
+ */
+function allureZoom() {
+  if (monde.camera.projection.current !== "Perspective") return 1;
+  let d = profondeur;
+  if (d === null) {
+    const boite = new THREE.Box3();
+    for (const m of maquettes.values()) if (m.modele.object.visible) boite.union(m.modele.box);
+    if (boite.isEmpty()) return 1;
+    d = boite.getBoundingSphere(new THREE.Sphere()).center.distanceTo(monde.camera.three.position);
+  }
+  const rayon = Math.max(0.5, monde.camera.controls.distance);
+  return Math.min(5, Math.max(1, d / rayon));
+}
 
 // --- Vitesse : plus vive au doigt, et proportionnelle à la vitesse du geste ----------
 
@@ -88,7 +111,7 @@ window.addEventListener(
     const gain = 1 + Math.min(1.2, Math.max(0, (elan - 0.25) * 0.9));
     controles.azimuthRotateSpeed = base.rotation * gain;
     controles.polarRotateSpeed = base.rotation * gain;
-    controles.dollySpeed = e.pointerType === "mouse" ? base.zoom : base.zoom * gain;
+    controles.dollySpeed = e.pointerType === "mouse" ? base.zoom : base.zoom * Math.min(gain, 1.3) * allureZoom();
   },
   true,
 );

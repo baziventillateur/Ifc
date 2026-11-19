@@ -107,7 +107,8 @@ function tournerTete(lacet: number, tangage: number) {
   const position = controles.getPosition(new THREE.Vector3());
   const cible = controles.getTarget(new THREE.Vector3());
   const versCible = cible.sub(position);
-  const longueur = Math.max(0.5, versCible.length());
+  // Cible jamais plus proche que la distance minimale, sinon la caméra recule d'un coup.
+  const longueur = Math.max(controles.minDistance, 0.5, versCible.length());
   const s = new THREE.Spherical().setFromVector3(versCible);
   s.theta -= THREE.MathUtils.degToRad(lacet);
   s.phi = THREE.MathUtils.clamp(s.phi + THREE.MathUtils.degToRad(tangage), 0.06, Math.PI - 0.06);

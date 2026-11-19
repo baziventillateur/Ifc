@@ -187,7 +187,9 @@ export function recentrerPivot() {
   const haut = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
   const direction = cam.getWorldDirection(new THREE.Vector3());
   const base = position.addScaledVector(haut, decalageMise);
-  const cible = base.clone().addScaledVector(direction, Math.max(c.distance, 0.5));
+  // Jamais plus près que la distance minimale de la bibliothèque : sinon elle recule
+  // la caméra d'un coup pour la respecter (le « sursaut » quand on regarde de près).
+  const cible = base.clone().addScaledVector(direction, Math.max(c.distance, c.minDistance, 0.5));
   void c.setFocalOffset(0, decalageMise, 0, false);
   void c.setLookAt(base.x, base.y, base.z, cible.x, cible.y, cible.z, false);
 }
@@ -417,7 +419,31 @@ export async function definirProjection(vers: "Perspective" | "Orthographic") {
   if (bascule) await bascule;
   if (monde.camera.projection.current === vers) return;
   recentrerPivot();
+  const c = monde.camera.controls;
+  // Retour en perspective : la caméra reste où elle est. La bibliothèque la replaçait
+  // à une distance calculée, ce qui la faisait reculer (à travers les murs, en intérieur).
+  const retour = vers === "Perspective";
+  const position = c.getPosition(new THREE.Vector3());
+  const direction = c.getTarget(new THREE.Vector3()).sub(position).normalize();
+  const ortho = monde.camera.threeOrtho;
+  const hauteurVue = (ortho.top - ortho.bottom) / ortho.zoom;
+  const zoome = ortho.zoom > 1.05;
+  let surface: number | null = null;
+  if (retour && zoome) {
+    // Si on a zoomé en vue orthogonale, on avance (jamais on ne recule) pour garder
+    // à peu près le même cadrage sur ce qui est au centre de l'écran.
+    const hit: any = await lanceur.castRay({ position: new THREE.Vector2(0, 0), items: [] } as any).catch(() => null);
+    if (hit?.point) surface = (hit.point as THREE.Vector3).clone().sub(position).dot(direction);
+  }
   bascule = monde.camera.projection.set(vers).finally(() => (bascule = null));
   await bascule;
+  if (retour) {
+    const fov = THREE.MathUtils.degToRad(monde.camera.threePersp.fov);
+    const voulue = hauteurVue / (2 * Math.tan(fov / 2));
+    const avance = surface !== null ? Math.max(0, surface - Math.max(voulue, 0.3)) : 0;
+    const p = position.clone().addScaledVector(direction, avance);
+    const t = p.clone().addScaledVector(direction, Math.max(c.minDistance, 6));
+    await c.setLookAt(p.x, p.y, p.z, t.x, t.y, t.z, false);
+  }
   ajusterDecalage(false);
 }

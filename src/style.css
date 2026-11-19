@@ -2503,16 +2503,6 @@ canvas.regard {
   border-radius: 8px;
 }
 
-.btn-angle {
-  top: calc(var(--haut-barre) + var(--haut-outils) + 48px);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.btn-angle[hidden] {
-  display: none;
-}
 
 /* --- Numéro de version (discret) et fenêtre des versions --------------------------- */
 .version-etiquette {
@@ -2617,4 +2607,102 @@ body:has(.porte) .version-etiquette {
   flex: none;
   color: var(--doux);
   font-size: 11px;
+}
+
+/* --- Bouton de projection (à côté de l'œil) et liste des angles -------------------- */
+.btn-projection {
+  appearance: none;
+  position: fixed;
+  z-index: 11;
+  right: 48px;
+  top: calc(var(--haut-barre) + var(--haut-outils) + 8px);
+  min-width: 34px;
+  height: 34px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--bord);
+  border-radius: 17px;
+  background: var(--panneau-plein);
+  color: var(--doux);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.btn-projection.actif {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #3a2a14;
+}
+
+/* Sur ordinateur, l'œil n'est pas affiché : le bouton prend sa place. */
+@media (min-width: 820px) and (hover: hover) {
+  .btn-projection {
+    right: 8px;
+  }
+}
+
+/* Écran très étroit : les deux boutons l'un sous l'autre. */
+@media (max-width: 349px) {
+  .btn-projection {
+    right: 8px;
+    top: calc(var(--haut-barre) + var(--haut-outils) + 48px);
+  }
+}
+
+.choix-angle {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  background: var(--panneau-plein);
+  border: 1px solid var(--bord);
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.choix-angle-option {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 66px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--texte, #e8ecf1);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.choix-angle-option svg {
+  width: 15px;
+  height: 15px;
+}
+
+.choix-angle-option.actif {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.choix-angle-option.survol,
+.choix-angle-option:hover {
+  background: rgba(255, 140, 26, 0.16);
 }

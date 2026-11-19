@@ -70,17 +70,26 @@ window.addEventListener("pointercancel", lacher);
  * qui devient minuscule après quelques zooms : il fallait alors pincer plusieurs fois.
  * On le ramène à la distance réelle de ce qui est sous les doigts.
  */
-function allureZoom() {
-  if (monde.camera.projection.current !== "Perspective") return 1;
-  let d = profondeur;
-  if (d === null) {
-    const boite = new THREE.Box3();
-    for (const m of maquettes.values()) if (m.modele.object.visible) boite.union(m.modele.box);
-    if (boite.isEmpty()) return 1;
-    d = boite.getBoundingSphere(new THREE.Sphere()).center.distanceTo(monde.camera.three.position);
-  }
+function profondeurScene() {
+  const boite = new THREE.Box3();
+  for (const m of maquettes.values()) if (m.modele.object.visible) boite.union(m.modele.box);
+  if (boite.isEmpty()) return null;
+  return boite.getBoundingSphere(new THREE.Sphere()).center.distanceTo(monde.camera.three.position);
+}
+
+/**
+ * Allure du zoom pour une distance réelle d : le pas reste proportionnel à ce qu'on
+ * vise, quelle que soit la cible de la caméra (qui change après une vue orthogonale,
+ * un regard, un cadrage…). Le zoom garde donc toujours la même sensation.
+ */
+function allurePour(d: number | null) {
+  if (monde.camera.projection.current !== "Perspective" || d === null || !(d > 0)) return 1;
   const rayon = Math.max(0.5, monde.camera.controls.distance);
-  return Math.min(5, Math.max(1, d / rayon));
+  return Math.min(8, Math.max(0.1, d / rayon));
+}
+
+function allureZoom() {
+  return allurePour(profondeur ?? profondeurScene());
 }
 
 // --- Vitesse : plus vive au doigt, et proportionnelle à la vitesse du geste ----------
@@ -123,5 +132,40 @@ const oublier = (e: PointerEvent) => {
 };
 window.addEventListener("pointerup", oublier, true);
 window.addEventListener("pointercancel", oublier, true);
-// La molette garde sa vitesse habituelle.
-window.addEventListener("wheel", () => (controles.dollySpeed = BASE.mouse.zoom), { capture: true, passive: true });
+// --- Molette : même règle, avec la distance de ce qui est sous la souris ---------------
+const toile = monde.renderer!.three.domElement;
+let visee: { d: number | null; x: number; y: number; t: number } | null = null;
+let tirVisee = 0;
+let attenteVisee = 0;
+
+function viserSous(x: number, y: number) {
+  const r = toile.getBoundingClientRect();
+  const position = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  const mien = ++tirVisee;
+  void (lanceur.castRay({ position, items: [] } as any) as Promise<any>)
+    .then((brut) => {
+      if (mien !== tirVisee) return;
+      const hit = completerTir(brut, position);
+      const d = hit?.point ? monde.camera.three.position.distanceTo(hit.point) : null;
+      visee = { d, x, y, t: performance.now() };
+    })
+    .catch(() => {});
+}
+
+toile.addEventListener("pointermove", (e) => {
+  if (e.pointerType !== "mouse" || e.buttons) return;
+  window.clearTimeout(attenteVisee);
+  attenteVisee = window.setTimeout(() => viserSous(e.clientX, e.clientY), 120);
+});
+
+window.addEventListener(
+  "wheel",
+  (e) => {
+    const frais =
+      !!visee && performance.now() - visee.t < 700 && Math.hypot(visee.x - e.clientX, visee.y - e.clientY) < 40;
+    if (!frais) viserSous(e.clientX, e.clientY);
+    const proche = visee && Math.hypot(visee.x - e.clientX, visee.y - e.clientY) < 80 ? visee.d : null;
+    controles.dollySpeed = BASE.mouse.zoom * allurePour(proche ?? profondeurScene());
+  },
+  { capture: true, passive: true },
+);

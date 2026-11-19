@@ -415,6 +415,8 @@ export function estOrtho() {
   return monde.camera.projection.current === "Orthographic";
 }
 
+let rayonAvantOrtho = 0;
+
 export async function definirProjection(vers: "Perspective" | "Orthographic") {
   if (bascule) await bascule;
   if (monde.camera.projection.current === vers) return;
@@ -428,21 +430,27 @@ export async function definirProjection(vers: "Perspective" | "Orthographic") {
   const ortho = monde.camera.threeOrtho;
   const hauteurVue = (ortho.top - ortho.bottom) / ortho.zoom;
   const zoome = ortho.zoom > 1.05;
+  if (!retour) rayonAvantOrtho = c.distance;
   let surface: number | null = null;
-  if (retour && zoome) {
-    // Si on a zoomé en vue orthogonale, on avance (jamais on ne recule) pour garder
-    // à peu près le même cadrage sur ce qui est au centre de l'écran.
+  if (retour) {
+    // Ce qui est au centre de l'écran : sert à garder le cadrage si on a zoomé en vue
+    // orthogonale, et à placer la cible de la caméra à la bonne distance.
     const hit: any = await lanceur.castRay({ position: new THREE.Vector2(0, 0), items: [] } as any).catch(() => null);
     if (hit?.point) surface = (hit.point as THREE.Vector3).clone().sub(position).dot(direction);
+    if (surface !== null && !(surface > 0)) surface = null;
   }
   bascule = monde.camera.projection.set(vers).finally(() => (bascule = null));
   await bascule;
   if (retour) {
     const fov = THREE.MathUtils.degToRad(monde.camera.threePersp.fov);
     const voulue = hauteurVue / (2 * Math.tan(fov / 2));
-    const avance = surface !== null ? Math.max(0, surface - Math.max(voulue, 0.3)) : 0;
+    // Zoomé en orthogonale : on avance (jamais on ne recule) pour garder le cadrage.
+    const avance = zoome && surface !== null ? Math.max(0, surface - Math.max(voulue, 0.3)) : 0;
     const p = position.clone().addScaledVector(direction, avance);
-    const t = p.clone().addScaledVector(direction, Math.max(c.minDistance, 6));
+    // Cible à la distance de ce qui est visé (sinon celle d'avant la vue orthogonale) :
+    // une cible trop proche rendait ensuite le zoom très lent.
+    const reste = surface !== null ? surface - avance : rayonAvantOrtho;
+    const t = p.clone().addScaledVector(direction, Math.max(c.minDistance, 6, reste || 0));
     await c.setLookAt(p.x, p.y, p.z, t.x, t.y, t.z, false);
   }
   ajusterDecalage(false);

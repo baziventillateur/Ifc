@@ -5,7 +5,18 @@
 //   Maj pour aller plus vite.
 import * as THREE from "three";
 import { completerTir } from "./deplacements";
-import { alerte, fragments, lanceur, monde, projectionModifiee, recentrerPivot } from "./noyau";
+import {
+  alerte,
+  bouton,
+  cree,
+  definirProjection,
+  estOrtho,
+  fragments,
+  lanceur,
+  monde,
+  projectionModifiee,
+  recentrerPivot,
+} from "./noyau";
 import { maquettes } from "./registre";
 
 const canvas = monde.renderer!.three.domElement;
@@ -166,32 +177,165 @@ window.addEventListener("pointercancel", (e) => {
   finRegard();
 });
 
-// Grand angle : dans une pièce, l'angle de vue normal (60°) ne montre qu'un bout de
-// mur. Le bouton sous l'œil élargit le champ, comme un objectif grand angle.
+// --- Projection : un bouton rond à côté de l'œil ---------------------------------------
+// Toucher : bascule entre la vue orthogonale (sans perspective) et la perspective.
+// Appui long : liste des angles de vue (60° à 150°) ; on glisse le doigt sur la valeur
+// et on le lève, ou on la touche ensuite. L'angle choisi est gardé sur l'appareil.
 const ANGLES = [60, 85, 105, 120, 135, 150];
-const NOMS_ANGLES = ["normal", "large", "très large", "extra large", "géant", "maximum"];
-let angle = 0;
-const btnAngle = document.getElementById("btn-angle");
-
-function reglerAngle(index: number, annoncer = false) {
-  angle = index % ANGLES.length;
-  const cam = monde.camera.threePersp;
-  // Hors du mode regard, la vue garde son angle normal ; le choix est retenu.
-  const voulu = ANGLES[oeil ? angle : 0];
-  if (cam.fov !== voulu) {
-    cam.fov = voulu;
-    cam.updateProjectionMatrix();
-    void fragments.core.update(true);
-  }
-  if (btnAngle) {
-    btnAngle.textContent = `${ANGLES[angle]}°`;
-    btnAngle.classList.toggle("actif", angle > 0);
-    btnAngle.hidden = !oeil || monde.camera.projection.current !== "Perspective";
-  }
-  if (annoncer) alerte(`Angle de vue ${NOMS_ANGLES[angle]} (${ANGLES[angle]}°).`, 1800);
+const CLE_ANGLE = "nexbim-angle";
+let angle = 60;
+try {
+  const lu = Number(localStorage.getItem(CLE_ANGLE));
+  if (ANGLES.includes(lu)) angle = lu;
+} catch {
+  // Angle normal.
 }
-btnAngle?.addEventListener("click", () => reglerAngle(angle + 1, true));
-projectionModifiee.on(() => reglerAngle(angle));
+const btnProjection = document.getElementById("btn-projection");
+const ICONE_ORTHO =
+  '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4v15h15"/><path d="M5 13h6v6"/></svg>';
+
+function appliquerAngle() {
+  const cam = monde.camera.threePersp;
+  if (cam.fov === angle) return;
+  cam.fov = angle;
+  cam.updateProjectionMatrix();
+  void fragments.core.update(true);
+}
+
+function majBoutonProjection() {
+  if (!btnProjection) return;
+  const ortho = estOrtho();
+  btnProjection.classList.toggle("actif", ortho);
+  btnProjection.innerHTML = ortho ? ICONE_ORTHO : `<span>${angle}°</span>`;
+  btnProjection.title = ortho
+    ? "Vue orthogonale (sans perspective). Toucher : perspective. Appui long : angle de vue."
+    : `Perspective ${angle}°. Toucher : vue orthogonale. Appui long : changer l'angle.`;
+}
+
+const basculerProjection = () => void definirProjection(estOrtho() ? "Perspective" : "Orthographic");
+
+function choisirAngle(a: number) {
+  angle = a;
+  try {
+    localStorage.setItem(CLE_ANGLE, String(a));
+  } catch {
+    // Gardé pour la session seulement.
+  }
+  appliquerAngle();
+  majBoutonProjection();
+  if (estOrtho()) void definirProjection("Perspective");
+}
+
+appliquerAngle();
+majBoutonProjection();
+projectionModifiee.on(majBoutonProjection);
+
+let listeAngles: HTMLElement | null = null;
+function fermerAngles() {
+  listeAngles?.remove();
+  listeAngles = null;
+  window.removeEventListener("pointerdown", toucheDehors, true);
+}
+function toucheDehors(e: PointerEvent) {
+  const cible = e.target as Node;
+  if (listeAngles?.contains(cible) || btnProjection?.contains(cible)) return;
+  fermerAngles();
+}
+function ouvrirAngles() {
+  if (!btnProjection) return;
+  fermerAngles();
+  const liste = cree("div", "choix-angle");
+  const ortho = bouton("choix-angle-option" + (estOrtho() ? " actif" : ""), "", () => {
+    fermerAngles();
+    void definirProjection("Orthographic");
+  });
+  ortho.innerHTML = `${ICONE_ORTHO}<span>Ortho</span>`;
+  liste.append(ortho);
+  for (const a of ANGLES) {
+    const b = bouton("choix-angle-option" + (!estOrtho() && a === angle ? " actif" : ""), `${a}°`, () => {
+      fermerAngles();
+      choisirAngle(a);
+    });
+    liste.append(b);
+  }
+  document.body.append(liste);
+  const r = btnProjection.getBoundingClientRect();
+  const l = liste.getBoundingClientRect();
+  liste.style.top = `${r.bottom + 6}px`;
+  liste.style.left = `${Math.min(window.innerWidth - l.width - 4, Math.max(4, r.left + r.width / 2 - l.width / 2))}px`;
+  listeAngles = liste;
+  window.addEventListener("pointerdown", toucheDehors, true);
+}
+
+function optionSous(x: number, y: number) {
+  const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  const option = el?.closest<HTMLElement>(".choix-angle-option");
+  return option && listeAngles?.contains(option) ? option : null;
+}
+
+let appuiProjection: { id: number; x: number; y: number; long: boolean; minuterie: number } | null = null;
+btnProjection?.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const id = e.pointerId;
+  appuiProjection = {
+    id,
+    x: e.clientX,
+    y: e.clientY,
+    long: false,
+    minuterie: window.setTimeout(() => {
+      if (!appuiProjection || appuiProjection.id !== id) return;
+      appuiProjection.long = true;
+      navigator.vibrate?.(12);
+      ouvrirAngles();
+    }, 420),
+  };
+});
+window.addEventListener("pointermove", (e) => {
+  const a = appuiProjection;
+  if (!a || e.pointerId !== a.id) return;
+  if (!a.long) {
+    // Le doigt part ailleurs avant l'appui long : rien.
+    if (Math.hypot(e.clientX - a.x, e.clientY - a.y) > 14) {
+      window.clearTimeout(a.minuterie);
+      appuiProjection = null;
+    }
+    return;
+  }
+  const sous = optionSous(e.clientX, e.clientY);
+  listeAngles?.querySelectorAll(".choix-angle-option").forEach((o) => o.classList.toggle("survol", o === sous));
+});
+window.addEventListener("pointerup", (e) => {
+  const a = appuiProjection;
+  if (!a || e.pointerId !== a.id) return;
+  window.clearTimeout(a.minuterie);
+  appuiProjection = null;
+  if (!a.long) {
+    basculerProjection();
+    return;
+  }
+  // Doigt levé sur une valeur : elle est choisie. Sinon la liste reste ouverte.
+  optionSous(e.clientX, e.clientY)?.click();
+});
+window.addEventListener("pointercancel", (e) => {
+  if (appuiProjection && e.pointerId === appuiProjection.id) {
+    window.clearTimeout(appuiProjection.minuterie);
+    appuiProjection = null;
+  }
+});
+btnProjection?.addEventListener("contextmenu", (e) => e.preventDefault());
+// Au clavier (Entrée, Espace) : bascule simple.
+btnProjection?.addEventListener("click", (e) => {
+  if (e.detail === 0) basculerProjection();
+});
+// Touche O : même bascule.
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "o" && e.key !== "O") return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const cible = e.target as HTMLElement | null;
+  if (cible?.closest("input, textarea, select, [contenteditable]")) return;
+  basculerProjection();
+});
 
 const btnOeil = document.getElementById("btn-oeil");
 export function definirOeil(actif: boolean) {
@@ -200,10 +344,7 @@ export function definirOeil(actif: boolean) {
   reglerBoutons();
   btnOeil?.classList.toggle("actif", oeil);
   btnOeil?.setAttribute("aria-pressed", String(oeil));
-  reglerAngle(angle);
-  if (oeil) {
-    alerte("Mode regard : un doigt pour tourner la tête. Le bouton dessous élargit l'angle de vue.", 3800);
-  }
+  if (oeil) alerte("Mode regard : un doigt pour tourner la tête sur place. Retouchez l'œil pour en sortir.", 3500);
 }
 btnOeil?.addEventListener("click", () => definirOeil(!oeil));
 

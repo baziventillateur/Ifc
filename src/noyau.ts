@@ -127,7 +127,12 @@ fragments.core.models.materials.list.onItemSet.add(({ value: materiau }) => {
 export const lanceur = composants.get(OBC.Raycasters).get(monde);
 
 export function rafraichir() {
-  return fragments.core.update(true);
+  // La mise à jour peut ne se terminer qu'à l'image suivante (ou jamais, onglet en
+  // arrière-plan) : on ne fait pas attendre l'interface plus d'un instant.
+  return Promise.race([
+    fragments.core.update(true),
+    new Promise<void>((r) => setTimeout(r, 350)),
+  ]) as Promise<void>;
 }
 
 /**

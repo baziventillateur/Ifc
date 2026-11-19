@@ -25,7 +25,7 @@ import {
   visibles,
   type Maquette,
 } from "./registre";
-import { appliquerApparence, appliquerVisibilite, oublierMaquette } from "./apparence";
+import { appliquerApparence, appliquerVisibilite, oublierMaquette, selectionIds, selectionModifiee } from "./apparence";
 import { fermerFiche } from "./fiche";
 import { oublierIndex } from "./index-elements";
 import { demanderPersistance, ecrire, effacer, lire, lireTout } from "./stockage";
@@ -62,6 +62,20 @@ async function changerVisibilite(changements: [Maquette, boolean][]) {
   changement.emit();
 }
 
+/** Marque discrètement les maquettes qui contiennent un élément sélectionné. */
+function marquerChoisies() {
+  const choisies = selectionIds();
+  let nombre = 0;
+  for (const rang of calquesListe.querySelectorAll<HTMLElement>(".calque")) {
+    const oui = (choisies.get(rang.dataset.maquette ?? "")?.size ?? 0) > 0;
+    rang.classList.toggle("choisie", oui);
+    if (oui) nombre += 1;
+  }
+  // Panneau replié : le titre dit quand même quelle maquette est concernée.
+  calques.classList.toggle("a-selection", nombre > 0);
+}
+selectionModifiee.on(marquerChoisies);
+
 function dessinerCalques() {
   const liste = [...maquettes.values()];
   calques.hidden = liste.length === 0;
@@ -69,6 +83,7 @@ function dessinerCalques() {
   calquesListe.replaceChildren();
   for (const m of liste) {
     const rang = cree("div", "calque");
+    rang.dataset.maquette = m.id;
     rang.classList.toggle("masque", !m.modele.object.visible);
     const nom = bouton(
       "calque-nom",
@@ -152,6 +167,7 @@ function dessinerCalques() {
     );
     calquesListe.append(rang);
   }
+  marquerChoisies();
   calquesPied.classList.toggle("seul", liste.length < 2);
   btnCouleurs.classList.toggle("allume", reglages.couleurs);
   btnCouleurs.setAttribute("aria-pressed", String(reglages.couleurs));

@@ -2470,3 +2470,35 @@ canvas.regard {
   color: var(--accent);
   background: #3a2a14;
 }
+
+/* Maquette d'un élément sélectionné : repère discret dans la liste. */
+.calque.choisie {
+  background: rgba(232, 255, 26, 0.07);
+  box-shadow: inset 2px 0 0 #e8ff1a;
+}
+
+.calque.choisie .calque-nom {
+  color: var(--texte, #e8ecf1);
+}
+
+.calques.replie.a-selection .calques-entete {
+  box-shadow: inset 2px 0 0 #e8ff1a;
+}
+
+/* --- Nouvelle version publiée ------------------------------------------------------ */
+.maj-dispo {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  top: calc(var(--haut-barre) + env(safe-area-inset-top) + 6px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--panneau-plein);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}

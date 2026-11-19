@@ -391,9 +391,9 @@ export function definirSelection(nouvelle: Ids) {
     selection.clear();
     for (const [mid, ids] of nouvelle) if (ids.size && maquettes.has(mid)) selection.set(mid, new Set(ids));
     if (change.size === 0) return;
+    selectionModifiee.emit();
     await majContour();
     await rafraichir();
-    selectionModifiee.emit();
   });
 }
 

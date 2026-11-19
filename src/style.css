@@ -2502,3 +2502,14 @@ canvas.regard {
   border: 1px solid var(--accent);
   border-radius: 8px;
 }
+
+.btn-angle {
+  top: calc(var(--haut-barre) + var(--haut-outils) + 48px);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.btn-angle[hidden] {
+  display: none;
+}

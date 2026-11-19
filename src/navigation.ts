@@ -5,7 +5,7 @@
 //   Maj pour aller plus vite.
 import * as THREE from "three";
 import { completerTir } from "./deplacements";
-import { alerte, lanceur, monde, projectionModifiee, recentrerPivot } from "./noyau";
+import { alerte, fragments, lanceur, monde, projectionModifiee, recentrerPivot } from "./noyau";
 import { maquettes } from "./registre";
 
 const canvas = monde.renderer!.three.domElement;
@@ -165,6 +165,33 @@ window.addEventListener("pointercancel", (e) => {
   finRegard();
 });
 
+// Grand angle : dans une pièce, l'angle de vue normal (60°) ne montre qu'un bout de
+// mur. Le bouton sous l'œil élargit le champ, comme un objectif grand angle.
+const ANGLES = [60, 85, 105];
+const NOMS_ANGLES = ["normal", "large", "très large"];
+let angle = 0;
+const btnAngle = document.getElementById("btn-angle");
+
+function reglerAngle(index: number, annoncer = false) {
+  angle = index % ANGLES.length;
+  const cam = monde.camera.threePersp;
+  // Hors du mode regard, la vue garde son angle normal ; le choix est retenu.
+  const voulu = ANGLES[oeil ? angle : 0];
+  if (cam.fov !== voulu) {
+    cam.fov = voulu;
+    cam.updateProjectionMatrix();
+    void fragments.core.update(true);
+  }
+  if (btnAngle) {
+    btnAngle.textContent = `${ANGLES[angle]}°`;
+    btnAngle.classList.toggle("actif", angle > 0);
+    btnAngle.hidden = !oeil || monde.camera.projection.current !== "Perspective";
+  }
+  if (annoncer) alerte(`Angle de vue ${NOMS_ANGLES[angle]} (${ANGLES[angle]}°).`, 1800);
+}
+btnAngle?.addEventListener("click", () => reglerAngle(angle + 1, true));
+projectionModifiee.on(() => reglerAngle(angle));
+
 const btnOeil = document.getElementById("btn-oeil");
 export function definirOeil(actif: boolean) {
   oeil = actif;
@@ -172,7 +199,10 @@ export function definirOeil(actif: boolean) {
   reglerBoutons();
   btnOeil?.classList.toggle("actif", oeil);
   btnOeil?.setAttribute("aria-pressed", String(oeil));
-  if (oeil) alerte("Mode regard : un doigt pour tourner la tête sur place. Retouchez l'œil pour en sortir.", 3500);
+  reglerAngle(angle);
+  if (oeil) {
+    alerte("Mode regard : un doigt pour tourner la tête. Le bouton dessous élargit l'angle de vue.", 3800);
+  }
 }
 btnOeil?.addEventListener("click", () => definirOeil(!oeil));
 

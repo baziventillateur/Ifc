@@ -3,7 +3,6 @@
 import { alerte, bouton, cadrer, cree, demanderConfirmation, directionDepuisIfc, nombre } from "../noyau";
 import { boiteDe, definirSelection, nombreSelection, selectionIds, selectionModifiee } from "../apparence";
 import {
-  annuler,
   decalageIfc,
   definirApercu,
   definirVue,
@@ -11,14 +10,12 @@ import {
   deplacer,
   idsDeplaces,
   nombreDeplaces,
-  peutAnnuler,
-  peutRetablir,
   remettre,
-  retablir,
   vueModifiee,
 } from "../deplacements";
+import { annuler, historiqueModifie, peutAnnuler, peutRetablir, retablir } from "../historique";
 import { enregistrementModifie, enregistrementModifs } from "../nuage/projets";
-import { enregistrerOutil, marquerOutil, outilActif } from "./panneau";
+import { enregistrerOutil, marquerOutil } from "./panneau";
 import { note, titreSection } from "./ui";
 
 const AXES = [
@@ -113,8 +110,8 @@ enregistrerOutil("modifier", "Modifier", "Déplacer des éléments", (section) =
 
   // --- Historique et remise en place
   const historique = cree("div", "rangee");
-  const btnAnnuler = bouton("btn", "↶ Annuler", () => void faire(annuler), "Annuler le dernier déplacement");
-  const btnRetablir = bouton("btn", "↷ Rétablir", () => void faire(retablir), "Refaire le déplacement annulé");
+  const btnAnnuler = bouton("btn", "↶ Annuler", () => void faire(() => annuler()), "Annuler la dernière action (Ctrl+Z)");
+  const btnRetablir = bouton("btn", "↷ Rétablir", () => void faire(() => retablir()), "Refaire l'action annulée (Ctrl+Y)");
   historique.append(btnAnnuler, btnRetablir);
 
   const titreListe = titreSection("Éléments déplacés");
@@ -255,6 +252,7 @@ enregistrerOutil("modifier", "Modifier", "Déplacer des éléments", (section) =
     else majBoutons();
   });
   deplacementsModifies.on(majBoutons);
+  historiqueModifie.on(majBoutons);
   enregistrementModifie.on(majBoutons);
   majBoutons();
 
@@ -268,19 +266,4 @@ enregistrerOutil("modifier", "Modifier", "Déplacer des éléments", (section) =
       vider();
     },
   };
-});
-
-// Ctrl+Z / Ctrl+Y quand l'outil est ouvert.
-window.addEventListener("keydown", (e) => {
-  if (outilActif() !== "modifier" || !(e.ctrlKey || e.metaKey)) return;
-  const cible = e.target as HTMLElement | null;
-  if (cible?.closest("input, textarea, select, [contenteditable]")) return;
-  const touche = e.key.toLowerCase();
-  if (touche === "z" && !e.shiftKey) {
-    e.preventDefault();
-    void annuler();
-  } else if (touche === "y" || (touche === "z" && e.shiftKey)) {
-    e.preventDefault();
-    void retablir();
-  }
 });

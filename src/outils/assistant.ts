@@ -6,7 +6,8 @@
 import { alerte, bouton, cadrer, cree, directionDepuisIfc } from "../noyau";
 import { maquettes } from "../registre";
 import { boiteDe, definirCouche, definirIsolement, retirerCouche, selectionIds, STYLES } from "../apparence";
-import { annuler, deplacer, LIMITE_DEPLACES, nombreDeplaces, remettre } from "../deplacements";
+import { deplacer, LIMITE_DEPLACES, nombreDeplaces, remettre } from "../deplacements";
+import { annuler } from "../historique";
 import { libelleCategorie } from "../libelles";
 import { indexDeTout, SANS_NIVEAU } from "../index-elements";
 import { lister, quantifier, tousLesElements, versIds, type Filtre, type Regroupement } from "../requetes";
@@ -215,7 +216,7 @@ async function executer(nom: string, entree: Record<string, any>): Promise<unkno
     }
     case "deplacer_elements": {
       if (entree.annuler) {
-        await annuler();
+        await annuler(true);
         return { ok: true, elements_deplaces_au_total: nombreDeplaces() };
       }
       let ids = selectionIds();

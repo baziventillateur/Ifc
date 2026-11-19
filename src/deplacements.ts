@@ -2,6 +2,7 @@
 // redessiné à sa nouvelle place ; la maquette d'origine n'est jamais touchée. On peut
 // donc revenir à l'original à tout moment, annuler, et enregistrer les déplacements
 // à part (par identifiant IFC) dans le projet.
+import { noter, viderHistorique } from "./historique";
 import * as THREE from "three";
 import { brancherProche, directionDepuisIfc, directionVersIfc, monde, Signal, type MaterialDefinition } from "./noyau";
 import { changement, maquettes, type Maquette } from "./registre";
@@ -66,8 +67,6 @@ export function decalageIfc(mid: string, id: number): [number, number, number] |
 // --- Historique -----------------------------------------------------------------------
 
 type Pas = { mid: string; id: number; avant: THREE.Vector3 | null; apres: THREE.Vector3 | null }[];
-const faits: Pas[] = [];
-const defaits: Pas[] = [];
 
 function poser(pas: Pas, sens: "avant" | "apres") {
   for (const p of pas) {
@@ -83,13 +82,19 @@ function poser(pas: Pas, sens: "avant" | "apres") {
 
 async function valider(pas: Pas) {
   if (!pas.length) return;
-  poser(pas, "apres");
-  faits.push(pas);
-  if (faits.length > 100) faits.shift();
-  defaits.length = 0;
-  modifie = true;
-  await reappliquer();
-  deplacementsModifies.emit();
+  const rejouer = async (sens: "avant" | "apres") => {
+    apercu = null;
+    poser(pas, sens);
+    modifie = true;
+    await reappliquer();
+    deplacementsModifies.emit();
+  };
+  noter({
+    libelle: pas.some((p) => p.apres) ? `déplacement de ${pas.length} élément${pas.length > 1 ? "s" : ""}` : "remise en place",
+    annuler: () => rejouer("avant"),
+    refaire: () => rejouer("apres"),
+  });
+  await rejouer("apres");
 }
 
 /** Déplace des éléments de v (scène, mètres), en plus de leur déplacement actuel. */
@@ -125,31 +130,6 @@ export async function remettre(ids?: Ids) {
   }
   await valider(pas);
   return pas.length;
-}
-
-export const peutAnnuler = () => faits.length > 0;
-export const peutRetablir = () => defaits.length > 0;
-
-export async function annuler() {
-  const pas = faits.pop();
-  if (!pas) return;
-  apercu = null;
-  poser(pas, "avant");
-  defaits.push(pas);
-  modifie = true;
-  await reappliquer();
-  deplacementsModifies.emit();
-}
-
-export async function retablir() {
-  const pas = defaits.pop();
-  if (!pas) return;
-  apercu = null;
-  poser(pas, "apres");
-  faits.push(pas);
-  modifie = true;
-  await reappliquer();
-  deplacementsModifies.emit();
 }
 
 /** Montre la maquette modifiée (true) ou l'originale (false), sans rien perdre. */
@@ -248,8 +228,7 @@ export async function importer(donnees: Donnees | null) {
   const avait = nombreDeplaces() > 0 || !!apercu;
   table.clear();
   apercu = null;
-  faits.length = 0;
-  defaits.length = 0;
+  viderHistorique();
   modifie = true;
   enAttente = {};
   for (const [mid, parGuid] of Object.entries(donnees ?? {})) {

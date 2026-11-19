@@ -8,6 +8,7 @@ import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeome
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { composants, monde, rafraichir, reglerPost, Signal, type MaterialDefinition } from "./noyau";
 import { maquettes, reglages, type Maquette } from "./registre";
+import { enRejeu, noter } from "./historique";
 import {
   apresApercu,
   boiteFusion,
@@ -233,7 +234,7 @@ function sauverPerso() {
 }
 
 /** Change la couleur et/ou l'opacité d'éléments ; null leur rend leur apparence d'origine. */
-export function definirTeinte(ids: Ids, changement: Partial<Teinte> | null) {
+function definirTeinteBrut(ids: Ids, changement: Partial<Teinte> | null) {
   for (const [mid, liste] of ids) {
     let carte = perso.get(mid);
     if (!carte) {
@@ -263,7 +264,7 @@ export function teinteDe(ids: Ids): Teinte | null {
 export const nombrePerso = () => [...perso.values()].reduce((n, c) => n + c.size, 0);
 
 /** Rend leur apparence d'origine à tous les éléments recolorés. */
-export function effacerPerso() {
+function effacerPersoBrut() {
   const touchees = [...perso.keys()];
   perso.clear();
   sauverPerso();
@@ -434,13 +435,51 @@ function idsAvecGeometrie(m: Maquette) {
   return p;
 }
 
+// --- Historique : couleurs, masquage et isolement s'annulent avec Ctrl+Z ---------------
+
+type Instantane = { perso: string; masques: [string, number[]][]; isolement: [string, number[]][] | null };
+const copieIds = (ids: Ids): [string, number[]][] => [...ids].filter(([, s]) => s.size).map(([k, s]) => [k, [...s]]);
+
+function instantane(): Instantane {
+  const p: Record<string, [number, Teinte][]> = {};
+  for (const [mid, carte] of perso) if (carte.size) p[mid] = [...carte];
+  return { perso: JSON.stringify(p), masques: copieIds(masquesManuels), isolement: isolement ? copieIds(isolement) : null };
+}
+
+async function restaurer(etat: Instantane) {
+  perso.clear();
+  for (const [mid, liste] of Object.entries(JSON.parse(etat.perso) as Record<string, [number, Teinte][]>)) {
+    perso.set(mid, new Map(liste));
+  }
+  masquesManuels.clear();
+  for (const [mid, liste] of etat.masques) masquesManuels.set(mid, new Set(liste));
+  isolement = etat.isolement ? new Map(etat.isolement.map(([k, l]) => [k, new Set(l)])) : null;
+  sauverPerso();
+  persoModifiee.emit();
+  masquesModifies.emit();
+  await appliquerApparence();
+  await appliquerVisibilite();
+}
+
+/** Exécute un changement d'apparence et le note dans l'historique s'il a changé quelque chose. */
+function avecHistorique<T>(libelle: string, changement: () => T, cle?: string): T {
+  if (enRejeu()) return changement();
+  const avant = instantane();
+  const resultat = changement();
+  const apres = instantane();
+  if (JSON.stringify(avant) !== JSON.stringify(apres)) {
+    noter({ libelle, cle, annuler: () => restaurer(avant), refaire: () => restaurer(apres) });
+  }
+  return resultat;
+}
+
 export function definirFiltre(masques: Ids) {
   masquesFiltre.clear();
   for (const [k, v] of masques) masquesFiltre.set(k, v);
   return appliquerVisibilite();
 }
 
-export function definirIsolement(ids: Ids | null) {
+function definirIsolementBrut(ids: Ids | null) {
   isolement = ids;
   return appliquerVisibilite();
 }
@@ -448,7 +487,7 @@ export function definirIsolement(ids: Ids | null) {
 export const isolementActif = () => isolement !== null;
 
 /** Masque des éléments à la main (touche H). */
-export function masquer(ids: Ids) {
+function masquerBrut(ids: Ids) {
   for (const [mid, liste] of ids) {
     if (!masquesManuels.has(mid)) masquesManuels.set(mid, new Set());
     for (const id of liste) masquesManuels.get(mid)!.add(id);
@@ -458,7 +497,7 @@ export function masquer(ids: Ids) {
 }
 
 /** Réaffiche des éléments masqués à la main ; sans argument, tous. */
-export function reafficher(ids?: Ids) {
+function reafficherBrut(ids?: Ids) {
   if (!ids) masquesManuels.clear();
   else for (const [mid, liste] of ids) for (const id of liste) masquesManuels.get(mid)?.delete(id);
   masquesModifies.emit();
@@ -523,3 +562,23 @@ export async function boiteDe(ids: Ids) {
 }
 
 export const idsDe = (modele: string, ...liste: number[]): Ids => new Map([[modele, new Set(liste)]]);
+
+export function definirTeinte(ids: Ids, changement: Partial<Teinte> | null) {
+  return avecHistorique("couleur ou opacité", () => definirTeinteBrut(ids, changement), "teinte");
+}
+
+export function effacerPerso() {
+  return avecHistorique("couleurs rétablies", () => effacerPersoBrut(), undefined);
+}
+
+export function definirIsolement(ids: Ids | null) {
+  return avecHistorique("isolement", () => definirIsolementBrut(ids), undefined);
+}
+
+export function masquer(ids: Ids) {
+  return avecHistorique("masquage", () => masquerBrut(ids), undefined);
+}
+
+export function reafficher(ids?: Ids) {
+  return avecHistorique("réaffichage", () => reafficherBrut(ids), undefined);
+}

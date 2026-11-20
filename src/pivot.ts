@@ -170,6 +170,11 @@ function profondeurEstimee() {
  */
 // En vue orthogonale, le zoom est un peu plus vif (il n'y a pas l'effet d'approche).
 const ALLURE_ORTHO = 1.4;
+// Distance plancher : le zoom avance d'une part de la distance de ce qu'on vise, ce qui
+// le faisait ralentir sans fin en approchant d'un mur (jamais traversé). En deçà de
+// cette distance, il avance comme si l'objet visé était à PLANCHER mètres, donc
+// derrière le mur : on garde l'allure et on passe au travers.
+const PLANCHER = 2;
 
 function allurePour(d: number | null, sure: boolean) {
   if (monde.camera.projection.current !== "Perspective") return ALLURE_ORTHO;
@@ -178,6 +183,7 @@ function allurePour(d: number | null, sure: boolean) {
     sure = false;
   }
   if (d === null || !(d > 0)) return 1;
+  d = Math.max(d, PLANCHER);
   const rayon = Math.max(0.5, monde.camera.controls.distance);
   return Math.min(8, Math.max(sure ? 0.1 : 0.5, d / rayon));
 }

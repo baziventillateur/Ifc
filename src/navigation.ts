@@ -437,6 +437,7 @@ monde.renderer!.onBeforeUpdate.add(() => {
     for (const m of maquettes.values()) if (m.modele.object.visible) boiteScene.union(m.modele.box);
   }
   if (boiteScene.isEmpty()) return;
+  bornerOrtho();
   const distance = boiteScene.distanceToPoint(cam.position);
   const diagonale = boiteScene.min.distanceTo(boiteScene.max);
   const pres = THREE.MathUtils.clamp(distance * 0.02, 0.05, 1);
@@ -447,3 +448,20 @@ monde.renderer!.onBeforeUpdate.add(() => {
     cam.updateProjectionMatrix();
   }
 });
+
+// --- Vue orthogonale : jamais de coupe due à la caméra -------------------------------
+// Sans perspective, la limite proche de la caméra est un plan qui tranche toute la
+// largeur de l'image : en s'approchant (ou en passant en vue orthogonale depuis
+// l'intérieur), une coupe apparaissait et suivait la caméra. Les limites englobent
+// maintenant toute la maquette, devant comme derrière la caméra.
+const centreBoite = new THREE.Vector3();
+function bornerOrtho() {
+  const o = monde.camera.threeOrtho;
+  boiteScene.getCenter(centreBoite);
+  const rayon = o.position.distanceTo(centreBoite) + boiteScene.min.distanceTo(boiteScene.max) / 2 + 50;
+  if (Math.abs(-o.near - rayon) > rayon * 0.1 || Math.abs(o.far - rayon) > rayon * 0.1) {
+    o.near = -rayon;
+    o.far = rayon;
+    o.updateProjectionMatrix();
+  }
+}

@@ -394,8 +394,11 @@ export function boutonIcone(nom: string, action: () => void, titre: string, clas
 // Au retour en perspective, on garde le cadrage obtenu en orthogonale.
 export const projectionModifiee = new Signal();
 monde.camera.projection.matchOrthoDistanceEnabled = true;
-// Reculer loin la caméra orthogonale ne change rien à l'image ; on voit tout le site.
+// Vue orthogonale : rien n'est coupé, ni devant ni derrière la caméra (bornes ajustées
+// à la maquette dans navigation.ts).
+monde.camera.threeOrtho.near = -5000;
 monde.camera.threeOrtho.far = 5000;
+monde.camera.threeOrtho.updateProjectionMatrix();
 monde.camera.projection.onChanged.add((cam: THREE.PerspectiveCamera | THREE.OrthographicCamera) => {
   for (const [, modele] of fragments.list) modele.useCamera(cam);
   const ortho = monde.camera.projection.current === "Orthographic";

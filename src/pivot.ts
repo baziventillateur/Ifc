@@ -104,7 +104,6 @@ window.addEventListener(
     if (doigts.size === 2) {
       const [a, b] = [...doigts.values()];
       dernierMilieu = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      zoomGeste = performance.now();
     }
   },
   true,
@@ -253,45 +252,11 @@ function profondeurDevant(p: THREE.Vector3) {
   return p.clone().sub(cam.position).dot(cam.getWorldDirection(new THREE.Vector3()));
 }
 
-// --- Vue orthogonale : le zoom fait aussi avancer la caméra ---------------------------
-// Sans perspective, agrandir l'image ne déplace pas la caméra : on ne pouvait jamais
-// passer un mur. Maintenant la caméra se place comme le ferait une caméra en
-// perspective montrant la même largeur de vue, un peu plus près (FRANCHIR) : quand le
-// mur visé remplit environ un mètre de l'écran, on le traverse. En dézoomant, elle
-// recule d'autant. Elle rattrape doucement l'écart (jamais de saut).
-const FRANCHIR = 0.8;
-let zoomGeste = 0;
-let zoomPrecedent = 1;
-
-function distanceEquivalente(zoom: number) {
-  const o = monde.camera.threeOrtho;
-  const fov = THREE.MathUtils.degToRad(monde.camera.threePersp.fov);
-  return (o.top - o.bottom) / zoom / (2 * Math.tan(fov / 2));
-}
-
-monde.renderer!.onBeforeUpdate.add(() => {
-  const ortho = monde.camera.threeOrtho;
-  if (monde.camera.projection.current !== "Orthographic") {
-    zoomPrecedent = ortho.zoom;
-    return;
-  }
-  const avant = zoomPrecedent;
-  zoomPrecedent = ortho.zoom;
-  if (performance.now() - zoomGeste > 800 || !(avant > 0) || Math.abs(ortho.zoom / avant - 1) < 1e-5) return;
-  const dAvant = distanceEquivalente(avant);
-  const dApres = distanceEquivalente(ortho.zoom);
-  const naturel = dAvant - dApres; // > 0 en zoomant, < 0 en dézoomant
-  let pas = naturel;
-  const vise = (visee && performance.now() - visee.t < 1500 ? visee.point : null) ?? pointPince ?? pointTouche ?? dernierPoint;
-  const profondeur = vise ? profondeurDevant(vise) : null;
-  if (naturel > 0 && profondeur !== null && profondeur > 0) {
-    // En zoomant : la caméra se met à la distance voulue de ce qu'on vise, sans jamais
-    // reculer et sans aller plus de trois fois plus vite que le zoom (pas de saut).
-    const plafond = 3 * Math.max(naturel, (1 - avant / ortho.zoom) * 1.2);
-    pas = Math.min(Math.max(0, profondeur - (dApres - FRANCHIR)), plafond);
-  }
-  if (Math.abs(pas) > 1e-5) void monde.camera.controls.dollyInFixed(pas, false);
-});
+// --- Vue orthogonale : la caméra ne bouge pas en zoomant ---------------------------
+// Elle avançait avec le zoom pour traverser les murs, mais sans perspective le plan de
+// coupe de la caméra tranche toute la largeur de l'image : on voyait une coupe qui
+// suivait la caméra. La vue orthogonale montre maintenant toujours la maquette entière
+// (navigation.ts) ; pour voir l'intérieur : la coupe (ciseaux) ou la perspective.
 
 // --- Molette : même règle, avec la distance de ce qui est sous la souris ---------------
 const toile = monde.renderer!.three.domElement;
@@ -324,7 +289,6 @@ toile.addEventListener("pointermove", (e) => {
 window.addEventListener(
   "wheel",
   (e) => {
-    zoomGeste = performance.now();
     const frais =
       !!visee &&
       performance.now() - visee.t < 700 &&

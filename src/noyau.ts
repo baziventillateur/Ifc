@@ -179,7 +179,7 @@ let decalageMise = 0;
  * la compense par un décalage. Avant un cadrage, on remet la cible dans l'axe de la vue,
  * sans bouger l'image, en gardant le décalage de mise en page.
  */
-export function recentrerPivot() {
+export function recentrerPivot(rayon?: number) {
   const c = monde.camera.controls;
   const cam = monde.camera.three;
   cam.updateMatrixWorld();
@@ -189,7 +189,7 @@ export function recentrerPivot() {
   const base = position.addScaledVector(haut, decalageMise);
   // Jamais plus près que la distance minimale de la bibliothèque : sinon elle recule
   // la caméra d'un coup pour la respecter (le « sursaut » quand on regarde de près).
-  const cible = base.clone().addScaledVector(direction, Math.max(c.distance, c.minDistance, 0.5));
+  const cible = base.clone().addScaledVector(direction, Math.max(rayon ?? c.distance, c.minDistance, 0.5));
   void c.setFocalOffset(0, decalageMise, 0, false);
   void c.setLookAt(base.x, base.y, base.z, cible.x, cible.y, cible.z, false);
 }

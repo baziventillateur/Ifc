@@ -4,7 +4,7 @@
 import { modeOeil } from "./navigation";
 import { completerTir } from "./deplacements";
 import * as THREE from "three";
-import { cree, lanceur, monde } from "./noyau";
+import { cree, lanceur, monde, recentrerPivot } from "./noyau";
 import { maquettes } from "./registre";
 
 const canvas = monde.renderer!.three.domElement;
@@ -12,23 +12,56 @@ const enCours = new Set<number>();
 let tour = 0;
 let depart: { x: number; y: number; id: number } | null = null;
 let pivotPose = false;
-/** Distance de la caméra à ce qu'on a touché : c'est elle qui donne l'allure du zoom. */
-let profondeur: number | null = null;
+/** Point de la maquette touché par le premier doigt : sa distance donne l'allure du zoom. */
+let pointTouche: THREE.Vector3 | null = null;
+/** Point de la maquette entre les deux doigts (pincement en cours). */
+let pointPince: THREE.Vector3 | null = null;
+/** Distance actuelle de la caméra à un point (elle change pendant le zoom). */
+const distanceA = (p: THREE.Vector3 | null) => (p ? monde.camera.three.position.distanceTo(p) : null);
+/** Dernier point de la maquette touché ou visé : estimation tant qu'un tir n'a pas répondu. */
+let dernierPoint: THREE.Vector3 | null = null;
+const doigts = new Map<number, { x: number; y: number }>();
 
 // Petit repère du pivot, visible pendant la rotation.
 const repere = cree("div", "repere-pivot");
 repere.hidden = true;
 document.body.append(repere);
 
+function ndc(x: number, y: number) {
+  const r = canvas.getBoundingClientRect();
+  return new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+}
+
 canvas.addEventListener("pointerdown", (e) => {
   enCours.add(e.pointerId);
-  // Deux doigts : zoom et déplacement, on garde le pivot du premier doigt.
+  doigts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  // Deux doigts : zoom et déplacement, on garde le pivot du premier doigt, et on
+  // mesure ce qui est entre les deux doigts (c'est vers là qu'on zoome).
+  if (enCours.size === 2) {
+    caleCible(distanceA(pointTouche) ?? profondeurEstimee());
+    const [a, b] = [...doigts.values()];
+    if (a && b) {
+      const position = ndc((a.x + b.x) / 2, (a.y + b.y) / 2);
+      const mien = tour;
+      pointPince = null;
+      void (lanceur.castRay({ position, items: [] } as any) as Promise<any>)
+        .then((brut) => {
+          const hit = completerTir(brut, position);
+          if (hit?.point) dernierPoint = (hit.point as THREE.Vector3).clone();
+          if (mien !== tour || !hit?.point) return;
+          pointPince = (hit.point as THREE.Vector3).clone();
+          if (enCours.size > 1) caleCible(distanceA(pointPince));
+        })
+        .catch(() => {});
+    }
+  }
   if (enCours.size > 1) return;
   if (e.pointerType === "mouse" && e.button !== 0) return;
   if (e.shiftKey) return;
   const mien = ++tour;
   pivotPose = false;
-  profondeur = null;
+  pointTouche = null;
+  pointPince = null;
   depart = { x: e.clientX, y: e.clientY, id: e.pointerId };
   const r = canvas.getBoundingClientRect();
   const position = new THREE.Vector2(
@@ -38,9 +71,11 @@ canvas.addEventListener("pointerdown", (e) => {
   void (lanceur.castRay({ position, items: [] } as any) as Promise<any>)
     .then((brut) => {
       const hit = completerTir(brut, position);
+      if (hit?.point) dernierPoint = (hit.point as THREE.Vector3).clone();
       if (mien !== tour || !hit?.point) return;
       monde.camera.controls.setOrbitPoint(hit.point.x, hit.point.y, hit.point.z);
-      profondeur = monde.camera.three.position.distanceTo(hit.point);
+      pointTouche = (hit.point as THREE.Vector3).clone();
+      dernierPoint = (hit.point as THREE.Vector3).clone();
       pivotPose = true;
     })
     .catch(() => {});
@@ -54,6 +89,44 @@ window.addEventListener("pointermove", (e) => {
     repere.hidden = false;
   }
 });
+
+window.addEventListener(
+  "pointermove",
+  (e) => {
+    if (doigts.has(e.pointerId)) doigts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  },
+  true,
+);
+let dernierMilieu: { x: number; y: number } | null = null;
+window.addEventListener(
+  "pointermove",
+  () => {
+    if (doigts.size === 2) {
+      const [a, b] = [...doigts.values()];
+      dernierMilieu = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+  },
+  true,
+);
+const oublierDoigt = (e: PointerEvent) => {
+  const etait = doigts.get(e.pointerId);
+  doigts.delete(e.pointerId);
+  if (doigts.size > 0 || e.pointerType === "mouse" || !etait) return;
+  const ou = dernierMilieu ?? etait;
+  dernierMilieu = null;
+  window.setTimeout(() => {
+    if (doigts.size) return;
+    const position = ndc(ou.x, ou.y);
+    void (lanceur.castRay({ position, items: [] } as any) as Promise<any>)
+      .then((brut) => {
+        const hit = completerTir(brut, position);
+        if (hit?.point) dernierPoint = (hit.point as THREE.Vector3).clone();
+      })
+      .catch(() => {});
+  }, 250);
+};
+window.addEventListener("pointerup", oublierDoigt, true);
+window.addEventListener("pointercancel", oublierDoigt, true);
 
 const lacher = (e: PointerEvent) => {
   enCours.delete(e.pointerId);
@@ -77,19 +150,50 @@ function profondeurScene() {
   return boite.getBoundingSphere(new THREE.Sphere()).center.distanceTo(monde.camera.three.position);
 }
 
+/** Estimation de la distance de ce qu'on regarde, quand aucun tir n'a encore répondu. */
+function profondeurEstimee() {
+  if (dernierPoint) {
+    const cam = monde.camera.three;
+    const vers = dernierPoint.clone().sub(cam.position);
+    if (vers.dot(cam.getWorldDirection(new THREE.Vector3())) > 0) return vers.length();
+  }
+  return profondeurScene();
+}
+
 /**
- * Allure du zoom pour une distance réelle d : le pas reste proportionnel à ce qu'on
- * vise, quelle que soit la cible de la caméra (qui change après une vue orthogonale,
- * un regard, un cadrage…). Le zoom garde donc toujours la même sensation.
+ * Allure du zoom. Le pas de la bibliothèque est proportionnel à la distance de la cible
+ * de la caméra, qui n'a souvent rien à voir avec ce qu'on regarde (après une vue
+ * orthogonale, un regard, un cadrage…). On le ramène à la distance réelle d de ce qui
+ * est sous les doigts ou la souris. Sans mesure sûre (tir pas encore revenu, sur une
+ * grosse maquette), on n'est jamais plus lent que la bibliothèque : zoom vif partout.
  */
-function allurePour(d: number | null) {
-  if (monde.camera.projection.current !== "Perspective" || d === null || !(d > 0)) return 1;
+function allurePour(d: number | null, sure: boolean) {
+  if (monde.camera.projection.current !== "Perspective") return 1;
+  if (d === null || !(d > 0)) {
+    d = profondeurEstimee();
+    sure = false;
+  }
+  if (d === null || !(d > 0)) return 1;
   const rayon = Math.max(0.5, monde.camera.controls.distance);
-  return Math.min(8, Math.max(0.1, d / rayon));
+  return Math.min(8, Math.max(sure ? 0.1 : 0.5, d / rayon));
+}
+
+/**
+ * Le zoom ne peut pas avancer plus loin que la cible de la caméra à chaque pas : si
+ * elle est bien plus près que ce qu'on regarde, il piétine (c'était la lenteur en
+ * perspective). Au début de chaque zoom, la cible est remise dans l'axe de la vue, à
+ * la distance de ce qu'on regarde. L'image ne bouge pas.
+ */
+function caleCible(d: number | null) {
+  if (monde.camera.projection.current !== "Perspective" || d === null || !(d > 0)) return;
+  const c = monde.camera.controls;
+  const voulu = Math.max(d, c.minDistance, 0.5);
+  if (c.distance > voulu * 2 || c.distance < voulu / 2) recentrerPivot(voulu);
 }
 
 function allureZoom() {
-  return allurePour(profondeur ?? profondeurScene());
+  const d = distanceA(pointPince ?? pointTouche);
+  return allurePour(d, d !== null);
 }
 
 // --- Vitesse : plus vive au doigt, et proportionnelle à la vitesse du geste ----------
@@ -98,9 +202,10 @@ const controles = monde.camera.controls;
 // La vue suit le doigt de plus près (moins de traîne).
 controles.draggingSmoothTime = 0.07;
 
+// Au téléphone, l'écran est petit : la rotation va nettement plus vite qu'à la souris.
 const BASE = {
-  touch: { rotation: 1.4, zoom: 1.6 },
-  pen: { rotation: 1.4, zoom: 1.6 },
+  touch: { rotation: 2.4, zoom: 2.0 },
+  pen: { rotation: 2.4, zoom: 2.0 },
   mouse: { rotation: 1.0, zoom: 1.0 },
 };
 const derniers = new Map<number, { x: number; y: number; t: number }>();
@@ -134,9 +239,10 @@ window.addEventListener("pointerup", oublier, true);
 window.addEventListener("pointercancel", oublier, true);
 // --- Molette : même règle, avec la distance de ce qui est sous la souris ---------------
 const toile = monde.renderer!.three.domElement;
-let visee: { d: number | null; x: number; y: number; t: number } | null = null;
+let visee: { point: THREE.Vector3 | null; x: number; y: number; t: number } | null = null;
 let tirVisee = 0;
 let attenteVisee = 0;
+let derniereMolette = 0;
 
 function viserSous(x: number, y: number) {
   const r = toile.getBoundingClientRect();
@@ -146,8 +252,9 @@ function viserSous(x: number, y: number) {
     .then((brut) => {
       if (mien !== tirVisee) return;
       const hit = completerTir(brut, position);
-      const d = hit?.point ? monde.camera.three.position.distanceTo(hit.point) : null;
-      visee = { d, x, y, t: performance.now() };
+      const point = hit?.point ? (hit.point as THREE.Vector3).clone() : null;
+      if (point) dernierPoint = point;
+      visee = { point, x, y, t: performance.now() };
     })
     .catch(() => {});
 }
@@ -164,8 +271,11 @@ window.addEventListener(
     const frais =
       !!visee && performance.now() - visee.t < 700 && Math.hypot(visee.x - e.clientX, visee.y - e.clientY) < 40;
     if (!frais) viserSous(e.clientX, e.clientY);
-    const proche = visee && Math.hypot(visee.x - e.clientX, visee.y - e.clientY) < 80 ? visee.d : null;
-    controles.dollySpeed = BASE.mouse.zoom * allurePour(proche ?? profondeurScene());
+    const proche = visee && Math.hypot(visee.x - e.clientX, visee.y - e.clientY) < 80 ? distanceA(visee.point) : null;
+    const maintenant = performance.now();
+    if (maintenant - derniereMolette > 300) caleCible(proche ?? profondeurEstimee());
+    derniereMolette = maintenant;
+    controles.dollySpeed = BASE.mouse.zoom * allurePour(proche, proche !== null);
   },
   { capture: true, passive: true },
 );

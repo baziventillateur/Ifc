@@ -162,7 +162,9 @@ window.addEventListener("pointermove", (e) => {
   regard.y = e.clientY;
   // Au doigt, on tire l'image avec soi (comme une photo à 360°) ; à la souris, on vise.
   const sens = e.pointerType === "mouse" ? 1 : -1;
-  tournerTete(sens * dx * SENSIBILITE, sens * dy * SENSIBILITE);
+  // Au doigt, sur un petit écran, il faut tourner plus vite pour un même geste.
+  const k = e.pointerType === "mouse" ? SENSIBILITE : SENSIBILITE * 1.8;
+  tournerTete(sens * dx * k, sens * dy * k);
 });
 function finRegard() {
   if (regard?.actif) canvas.classList.remove("regard");

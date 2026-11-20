@@ -63,9 +63,9 @@ export async function viser(
 type ModeClic = (e: PointerEvent) => void | Promise<void>;
 let modeClic: ModeClic | null = null;
 /** Un outil (mesure…) peut prendre la main sur les touchers. */
-export function definirModeClic(f: ModeClic | null) {
+export function definirModeClic(f: ModeClic | null, curseur = "crosshair") {
   modeClic = f;
-  canvas.style.cursor = f ? "crosshair" : "";
+  canvas.style.cursor = f ? curseur : "";
 }
 
 let depart: { x: number; y: number; n: number } | null = null;

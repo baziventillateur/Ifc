@@ -160,8 +160,9 @@ window.addEventListener("pointermove", (e) => {
   }
   regard.x = e.clientX;
   regard.y = e.clientY;
-  // Au doigt, on tire l'image avec soi (comme une photo à 360°) ; à la souris, on vise.
-  const sens = e.pointerType === "mouse" ? 1 : -1;
+  // On tire l'image avec soi, au doigt comme au clic droit (comme une photo à 360°) :
+  // souris vers la gauche, on regarde à droite ; souris vers le bas, on regarde en haut.
+  const sens = -1;
   // Au doigt, sur un petit écran, il faut tourner plus vite pour un même geste.
   const k = e.pointerType === "mouse" ? SENSIBILITE : SENSIBILITE * 1.8;
   tournerTete(sens * dx * k, sens * dy * k);

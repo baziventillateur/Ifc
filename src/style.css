@@ -2706,3 +2706,15 @@ body:has(.porte) .version-etiquette {
 .choix-angle-option:hover {
   background: rgba(255, 140, 26, 0.16);
 }
+
+/* Outil affiché par une icône (Coupe : ciseaux). */
+.outil-btn.outil-icone {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 9px;
+}
+
+.outil-btn.outil-icone svg {
+  display: block;
+}

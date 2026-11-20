@@ -25,12 +25,18 @@ export function enregistrerOutil(
   libelle: string,
   titreOutil: string,
   construire: (section: HTMLElement) => Crochets | void,
+  icone?: string,
 ) {
   const section = cree("section", "outil-section");
   section.hidden = true;
   corps.append(section);
   const b = bouton("outil-btn", libelle, () => basculerOutil(id), titreOutil);
   b.dataset.outil = id;
+  if (icone) {
+    b.innerHTML = icone;
+    b.classList.add("outil-icone");
+    b.setAttribute("aria-label", libelle);
+  }
   barre.append(b);
   const o: Outil = { id, titre: titreOutil, bouton: b, section, crochets: {} };
   outils.set(id, o);

@@ -1,6 +1,7 @@
-// Plans de coupe : horizontal (par niveau), vertical (selon X ou Y), et sur une face :
-// on touche une surface, le plan s'aligne sur elle, puis la poignée « ciseaux » le
-// déplace perpendiculairement à la face.
+// Plans de coupe. L'outil s'ouvre sur les ciseaux : le curseur devient des ciseaux et
+// un clic sur une face pose tout de suite la coupe, alignée sur elle ; la poignée ✂ la
+// déplace perpendiculairement à la face. Les coupes horizontale (par niveau) et
+// verticale (selon X ou Y) sont rangées dans « Autres coupes ».
 import { boitesDe, completerTir } from "../deplacements";
 import * as THREE from "three";
 import { alerte, bouton, cree, el, lanceur, monde, nombre, rafraichir, versIfc } from "../noyau";
@@ -24,6 +25,14 @@ function bornes() {
 }
 
 // --- Coupe sur une face -----------------------------------------------------------------
+
+// Icône ciseaux (barre d'outils) et curseur ciseaux (clic au centre, à la croisée).
+const TRAITS_CISEAUX =
+  '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"/>';
+export const ICONE_CISEAUX = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${TRAITS_CISEAUX}</svg>`;
+const CURSEUR_CISEAUX = `url("data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="-1 -1 26 26" fill="none" stroke-linecap="round" stroke-linejoin="round"><g stroke="#111" stroke-width="4.2">${TRAITS_CISEAUX}</g><g stroke="#fff" stroke-width="2">${TRAITS_CISEAUX}</g><circle cx="12" cy="12" r="1.6" fill="#ff8c1a" stroke="none"/></svg>`,
+)}") 15 15, crosshair`;
 
 const planF = new THREE.Plane();
 const face = {
@@ -118,9 +127,9 @@ async function choisirFace(e: PointerEvent) {
   const r = monde.renderer!.three.domElement.getBoundingClientRect();
   const position = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   const hit: any = completerTir(await lanceur.castRay({ position, items: [] } as any), position);
-  definirModeClic(null);
+  armerCiseaux();
   if (!hit?.point) {
-    alerte("Touchez une surface de la maquette.", 2500);
+    alerte("Cliquez sur une surface de la maquette.", 2500);
     majFace();
     return;
   }
@@ -155,6 +164,12 @@ async function appliquer() {
   marquerOutil("coupe", etat.h.actif || etat.v.actif || face.actif);
   placerPoignee();
   await rafraichir();
+}
+
+let outilOuvert = false;
+/** Tant que l'outil Coupe est ouvert, un clic sur une face pose la coupe. */
+function armerCiseaux() {
+  definirModeClic(outilOuvert ? choisirFace : null, CURSEUR_CISEAUX);
 }
 
 export function retirerCoupes() {
@@ -222,20 +237,16 @@ enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
   });
   axes.racine.append(inverser);
 
-  // --- Sur une face
+  // --- Sur une face (les ciseaux)
   const zoneFace = cree("div", "coupe-face");
   majFace = () => {
     zoneFace.replaceChildren();
     if (face.actif) {
       zoneFace.append(
-        note(`Coupe alignée sur la face, décalée de ${nombre(face.decalage)} m. Glissez les ciseaux ✂ pour la déplacer.`),
+        note(`Coupe posée, décalée de ${nombre(face.decalage)} m. Glissez ✂ pour la déplacer, ou cliquez sur une autre face.`),
       );
       const rang = cree("div", "puces");
       rang.append(
-        bouton("puce", "Autre face", () => {
-          definirModeClic(choisirFace);
-          alerte("Touchez la surface sur laquelle aligner la coupe.", 4000);
-        }),
         bouton("puce", "Garder l'autre côté", () => {
           face.origine.copy(ancre());
           face.decalage = 0;
@@ -256,26 +267,21 @@ enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
       );
       zoneFace.append(rang);
     } else {
-      zoneFace.append(
-        bouton("btn principal", "Couper sur une face", () => {
-          definirModeClic(choisirFace);
-          alerte("Touchez la surface sur laquelle aligner la coupe.", 4000);
-        }),
-        note("Touchez un mur, une dalle ou une face inclinée : la coupe s'aligne dessus."),
-      );
+      zoneFace.append(note("✂ Cliquez sur un mur, une dalle ou une face inclinée : la coupe se pose dessus."));
     }
   };
   majFace();
 
-  const toutRetirer = bouton("btn", "Retirer les coupes", () => {
+  const toutRetirer = bouton("btn", "Retirer toutes les coupes", () => {
     h.input.checked = false;
     v.input.checked = false;
     retirerCoupes();
   });
 
-  section.append(
-    titreSection("Sur une face"),
-    zoneFace,
+  // --- Autres coupes, repliées
+  const autres = cree("details", "reglages");
+  autres.append(
+    cree("summary", "", "Autres coupes : horizontale, par niveau, verticale"),
     h.racine,
     hauteur.racine,
     titreSection("Couper au niveau"),
@@ -286,6 +292,8 @@ enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
     position.racine,
     toutRetirer,
   );
+
+  section.append(zoneFace, autres);
 
   function regler() {
     const b = bornes();
@@ -356,10 +364,15 @@ enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
 
   return {
     ouvrir: () => {
+      outilOuvert = true;
+      armerCiseaux();
       regler();
       void chargerNiveaux();
       majFace();
     },
-    fermer: () => definirModeClic(null),
+    fermer: () => {
+      outilOuvert = false;
+      definirModeClic(null);
+    },
   };
-});
+}, ICONE_CISEAUX);

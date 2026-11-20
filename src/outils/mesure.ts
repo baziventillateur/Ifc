@@ -7,7 +7,8 @@
 import { completerTir } from "../deplacements";
 import * as THREE from "three";
 import * as FRAGS from "@thatopen/fragments";
-import { alerte, bouton, boutonIcone, cree, el, lanceur, monde, nombre } from "../noyau";
+import * as OBC from "@thatopen/components";
+import { alerte, bouton, boutonIcone, composants, cree, el, lanceur, monde, nombre } from "../noyau";
 import { definirModeClic } from "../fiche";
 import { enregistrerOutil, marquerOutil } from "./panneau";
 import { interrupteur, note } from "./ui";
@@ -238,10 +239,31 @@ dessin.append(repere);
 
 let survol: Point | null = null;
 
-async function viserMesure(e: { clientX: number; clientY: number }): Promise<Point | null> {
+// Accrochage : seulement quand le pointeur est tout près d'un sommet ou d'une arête,
+// mesuré en pixels à l'écran (la bibliothèque accrochait jusqu'à 1 m, ce qui, de près,
+// faisait sauter le repère très loin du pointeur).
+const ACCROCHE_PX = { souris: { sommet: 10, arete: 7 }, doigt: { sommet: 22, arete: 16 } };
+const resolveur = composants.get(OBC.SnapResolvers).get();
+
+/** Mètres couverts par un pixel de l'écran, à une profondeur donnée. */
+function metresParPixel(profondeur: number) {
+  const hauteur = monde.renderer!.three.domElement.clientHeight || 1;
+  const cam = monde.camera.three as THREE.PerspectiveCamera & THREE.OrthographicCamera;
+  if (cam.isOrthographicCamera) return (cam.top - cam.bottom) / cam.zoom / hauteur;
+  return (2 * Math.max(profondeur, 0.05) * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2)) / hauteur;
+}
+
+async function viserMesure(e: { clientX: number; clientY: number; pointerType?: string }): Promise<Point | null> {
   const r = monde.renderer!.three.domElement.getBoundingClientRect();
   const position = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-  const hit: any = completerTir(
+  const seuils = e.pointerType && e.pointerType !== "mouse" ? ACCROCHE_PX.doigt : ACCROCHE_PX.souris;
+  // Tolérance de la bibliothèque, en mètres, d'après la profondeur du dernier point visé.
+  const cam = monde.camera.three;
+  const profondeur = survol
+    ? survol.point.clone().sub(cam.position).dot(cam.getWorldDirection(new THREE.Vector3()))
+    : monde.camera.controls.distance;
+  resolveur.maxDistance = Math.max(0.003, metresParPixel(profondeur) * seuils.sommet * 1.5);
+  let hit: any = completerTir(
     await lanceur.castRay({
       position,
       items: [],
@@ -250,6 +272,20 @@ async function viserMesure(e: { clientX: number; clientY: number }): Promise<Poi
     position,
   );
   if (!hit?.point) return null;
+  // Contrôle à l'écran : accroché trop loin du pointeur, on prend le point de la face.
+  const classe = hit.snappingClass;
+  if (classe === FRAGS.SnappingClass.POINT || classe === FRAGS.SnappingClass.LINE) {
+    const s = ecran(hit.point);
+    const limite = classe === FRAGS.SnappingClass.POINT ? seuils.sommet : seuils.arete;
+    if (!s || Math.hypot(s.x - e.clientX, s.y - e.clientY) > limite) {
+      const brut: any = completerTir(
+        await lanceur.castRay({ position, items: [], snappingClasses: [FRAGS.SnappingClass.FACE] } as any),
+        position,
+      );
+      if (!brut?.point) return null;
+      hit = { ...brut, snappingClass: FRAGS.SnappingClass.FACE, snappedEdgeP1: undefined, snappedEdgeP2: undefined };
+    }
+  }
   return {
     point: hit.point.clone(),
     classe: hit.snappingClass ?? FRAGS.SnappingClass.FACE,

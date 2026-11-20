@@ -3,17 +3,22 @@ import { defineConfig } from "vite";
 
 // Numéro de version : 1.<nombre de publications>, avec la date et les dernières
 // nouveautés (titres des publications), lus dans l'historique git au moment du build.
+// Titres corrigés pour la fenêtre des versions (publication déjà faite avec un autre titre).
+const TITRES: Record<string, string> = {
+  c4bc9d9: "Boutons annuler / rétablir, couleurs d'origine, menu du compte, accès admin à tous les projets",
+};
+
 function version() {
   const git = (commande: string) => execSync(`git ${commande}`, { encoding: "utf-8" }).trim();
   try {
     const total = Number(git("rev-list --count HEAD"));
-    const lignes = git('log -15 --date=iso-strict --pretty=format:%cd%x09%s').split("\n");
+    const lignes = git('log -15 --date=iso-strict --pretty=format:%h%x09%cd%x09%s').split("\n");
     return {
       numero: `1.${total}`,
       date: new Date().toISOString(),
       historique: lignes.map((ligne, i) => {
-        const [date, ...titre] = ligne.split("\t");
-        return { numero: `1.${total - i}`, date, titre: titre.join(" ") };
+        const [hash, date, ...titre] = ligne.split("\t");
+        return { numero: `1.${total - i}`, date, titre: TITRES[hash] ?? titre.join(" ") };
       }),
     };
   } catch {

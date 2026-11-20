@@ -46,7 +46,16 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+      # L'API des artefacts de GitHub échoue parfois (« No artifacts named github-pages ») :
+      # le site n'est alors pas mis à jour. On réessaie, et un second échec fait échouer
+      # la publication pour qu'il se voie.
       - name: Déployer sur GitHub Pages
         id: pages
         continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - name: Attendre avant un nouvel essai
+        if: steps.pages.outcome == 'failure'
+        run: sleep 30
+      - name: Déployer sur GitHub Pages (nouvel essai)
+        if: steps.pages.outcome == 'failure'
         uses: actions/deploy-pages@v4

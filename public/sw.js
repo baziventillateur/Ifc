@@ -9,5 +9,7 @@ self.addEventListener('fetch',e=>{
   e.respondWith(req.then(res=>{
     if(r.mode==='navigate'&&res.ok){const c=res.clone();caches.open(C).then(k=>k.put('./',c));}
     return res;
-  }).catch(()=>caches.match(r).then(m=>m||caches.match('./'))));
+  }).catch(()=>caches.match(r).then(m=>m||(r.mode==='navigate'?caches.match('./'):Response.error())))));
+// Hors ligne, seule la navigation retombe sur la page en cache : la vérification des mises à jour
+// ne doit pas lire l'ancienne page et conclure « à jour ».
 });

@@ -21,6 +21,9 @@ export const historiqueModifie = new Signal();
 
 export const peutAnnuler = () => faites.length > 0;
 export const peutRetablir = () => defaites.length > 0;
+/** Ce que Ctrl+Z annulerait, et ce que Ctrl+Y rétablirait. */
+export const aAnnuler = () => faites[faites.length - 1]?.libelle ?? "";
+export const aRetablir = () => defaites[defaites.length - 1]?.libelle ?? "";
 /** Vrai pendant qu'une action est annulée ou refaite : ne rien noter à ce moment-là. */
 export const enRejeu = () => rejoue;
 

@@ -8,6 +8,7 @@ import "./fiche";
 import "./pivot";
 import "./navigation";
 import "./mise-a-jour";
+import "./boutons-historique";
 
 // Outils, dans l'ordre de la barre.
 import "./selection";

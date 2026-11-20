@@ -7,6 +7,8 @@ export type Maquette = {
   modele: Modele;
   couleur: THREE.Color;
   hex: string;
+  /** Couleur d'origine de la maquette (celle de son lot), avant tout choix à la main. */
+  hexOrigine: string;
   lot: string;
   transparente: boolean;
   /** Opacité quand la maquette est transparente (0,05 à 1). */
@@ -54,6 +56,7 @@ function lisCouleursLots(): Record<string, string> {
   }
 }
 
+/** Lot et couleur d'une maquette d'après son nom ; « origine » ignore les couleurs choisies. */
 export function detecterLot(nom: string) {
   const mots = new Set(normaliser(nom).split(/[^a-z0-9]+/).filter(Boolean));
   let lot = "Autre";
@@ -69,7 +72,7 @@ export function detecterLot(nom: string) {
     const deja = [...maquettes.values()].filter((m) => m.lot === "Autre").length;
     hex = AUTRES[deja % AUTRES.length];
   }
-  return { lot, hex: lisCouleursLots()[lot] ?? hex };
+  return { lot, hex: lisCouleursLots()[lot] ?? hex, origine: hex };
 }
 
 /** Couleur propre à une maquette, gardée sur l'appareil. */
@@ -103,6 +106,39 @@ export function definirCouleurLot(lot: string, hex: string) {
   changement.emit();
 }
 
+// --- État des couleurs (pour annuler / rétablir et réinitialiser) -------------------
+
+export type EtatCouleurs = {
+  /** Mode « Couleurs » allumé. */
+  mode: boolean;
+  /** Couleurs choisies à la main, par maquette et par lot. */
+  maquettes: Record<string, string>;
+  lots: Record<string, string>;
+};
+
+export const etatCouleurs = (): EtatCouleurs => ({
+  mode: reglages.couleurs,
+  maquettes: lisCouleursMaquettes(),
+  lots: lisCouleursLots(),
+});
+
+/** Remet un état de couleurs (mode, choix par maquette et par lot) et recolore les maquettes. */
+export function appliquerEtatCouleurs(e: EtatCouleurs) {
+  reglages.couleurs = e.mode;
+  try {
+    localStorage.setItem("visio-couleurs", e.mode ? "1" : "0");
+    localStorage.setItem(CLE_MAQUETTES, JSON.stringify(e.maquettes));
+    localStorage.setItem(CLE_LOTS, JSON.stringify(e.lots));
+  } catch {
+    // Mémoire locale indisponible : état gardé pour la session.
+  }
+  for (const m of maquettes.values()) {
+    const hex = e.maquettes[m.id] ?? e.lots[m.lot] ?? m.hexOrigine;
+    m.hex = hex;
+    m.couleur = new THREE.Color(hex);
+  }
+}
+
 let exempleEnCours = false;
 export function marquerExemple(actif: boolean) {
   exempleEnCours = actif;
@@ -111,13 +147,14 @@ export function marquerExemple(actif: boolean) {
 fragments.list.onItemSet.add(({ key, value: modele }) => {
   modele.useCamera(monde.camera.three);
   monde.scene.three.add(modele.object);
-  const { lot, hex: hexLot } = detecterLot(key);
+  const { lot, hex: hexLot, origine } = detecterLot(key);
   const hex = lisCouleursMaquettes()[key] ?? hexLot;
   maquettes.set(key, {
     id: key,
     modele,
     couleur: new THREE.Color(hex),
     hex,
+    hexOrigine: origine,
     lot,
     transparente: false,
     opacite: 0.2,

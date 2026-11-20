@@ -60,6 +60,11 @@ async function verifier() {
 const etiquette = bouton("version-etiquette", `v${VERSION.numero}`, ouvrir, "Version de NexBim");
 document.body.append(etiquette);
 
+/** Fenêtre des versions (aussi ouverte depuis le menu du compte). */
+export function ouvrirVersions() {
+  ouvrir();
+}
+
 function ouvrir() {
   const fond = cree("div", "dialogue-fond au-dessus");
   const boite = cree("div", "dialogue versions");

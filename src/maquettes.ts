@@ -25,7 +25,17 @@ import {
   visibles,
   type Maquette,
 } from "./registre";
-import { appliquerApparence, appliquerVisibilite, oublierMaquette, selectionIds, selectionModifiee } from "./apparence";
+import {
+  appliquerApparence,
+  appliquerVisibilite,
+  couleursModifiees,
+  enregistrer,
+  oublierMaquette,
+  persoModifiee,
+  reinitialiserCouleurs,
+  selectionIds,
+  selectionModifiee,
+} from "./apparence";
 import { fermerFiche } from "./fiche";
 import { oublierIndex } from "./index-elements";
 import { demanderPersistance, ecrire, effacer, lire, lireTout } from "./stockage";
@@ -55,8 +65,10 @@ function majTitre() {
   else nomMaquette.textContent = `${n} maquettes`;
 }
 
-async function changerVisibilite(changements: [Maquette, boolean][]) {
-  for (const [m, v] of changements) m.modele.object.visible = v;
+async function changerVisibilite(changements: [Maquette, boolean][], libelle = "affichage des maquettes") {
+  enregistrer(libelle, () => {
+    for (const [m, v] of changements) m.modele.object.visible = v;
+  });
   await fermerFiche();
   await rafraichir();
   changement.emit();
@@ -103,15 +115,17 @@ function dessinerCalques() {
     });
     choix.addEventListener("change", () => {
       // Choisir une couleur allume le mode couleurs, sinon elle ne se voit pas.
-      definirCouleurMaquette(m, choix.value);
-      if (!reglages.couleurs) {
-        reglages.couleurs = true;
-        try {
-          localStorage.setItem("visio-couleurs", "1");
-        } catch {
-          // Mémoire locale indisponible : réglage gardé pour la session.
+      enregistrer(`couleur de « ${m.id} »`, () => {
+        definirCouleurMaquette(m, choix.value);
+        if (!reglages.couleurs) {
+          reglages.couleurs = true;
+          try {
+            localStorage.setItem("visio-couleurs", "1");
+          } catch {
+            // Mémoire locale indisponible : réglage gardé pour la session.
+          }
         }
-      }
+      });
       void appliquerApparence();
       dessinerCalques();
     });
@@ -121,7 +135,9 @@ function dessinerCalques() {
     const transp = boutonIcone(
       "transparence",
       () => {
-        m.transparente = !m.transparente;
+        enregistrer(m.transparente ? `« ${m.id} » opaque` : `« ${m.id} » transparente`, () => {
+          m.transparente = !m.transparente;
+        });
         void appliquerApparence([m.id]);
         dessinerCalques();
       },
@@ -140,7 +156,13 @@ function dessinerCalques() {
       curseur.setAttribute("aria-label", `Opacité de « ${m.id} »`);
       const valeur = cree("span", "valeur-transparence", `${curseur.value} %`);
       curseur.addEventListener("input", () => {
-        m.opacite = Number(curseur.value) / 100;
+        enregistrer(
+          `opacité de « ${m.id} »`,
+          () => {
+            m.opacite = Number(curseur.value) / 100;
+          },
+          `opacite-${m.id}`,
+        );
         valeur.textContent = `${curseur.value} %`;
         void appliquerApparence([m.id]);
       });
@@ -150,7 +172,7 @@ function dessinerCalques() {
       rang.append(
         boutonIcone(
           "isoler",
-          () => void changerVisibilite(liste.map((x) => [x, x === m])),
+          () => void changerVisibilite(liste.map((x) => [x, x === m]), `« ${m.id} » seule`),
           `Afficher seulement « ${m.id} »`,
         ),
       );
@@ -160,7 +182,7 @@ function dessinerCalques() {
     rang.append(
       boutonIcone(
         visible ? "oeil" : "oeilBarre",
-        () => void changerVisibilite([[m, !visible]]),
+        () => void changerVisibilite([[m, !visible]], visible ? `« ${m.id} » masquée` : `« ${m.id} » affichée`),
         visible ? `Masquer « ${m.id} »` : `Afficher « ${m.id} »`,
         "icone" + (visible ? "" : " eteint"),
       ),
@@ -171,6 +193,7 @@ function dessinerCalques() {
   calquesPied.classList.toggle("seul", liste.length < 2);
   btnCouleurs.classList.toggle("allume", reglages.couleurs);
   btnCouleurs.setAttribute("aria-pressed", String(reglages.couleurs));
+  majReinit();
   majTitre();
 }
 
@@ -182,15 +205,29 @@ calquesEntete.addEventListener("click", () => {
 });
 
 btnCouleurs.addEventListener("click", () => {
-  reglages.couleurs = !reglages.couleurs;
-  try {
-    localStorage.setItem("visio-couleurs", reglages.couleurs ? "1" : "0");
-  } catch {
-    // Mémoire locale indisponible : réglage gardé pour la session.
-  }
+  enregistrer(reglages.couleurs ? "couleurs éteintes" : "couleurs allumées", () => {
+    reglages.couleurs = !reglages.couleurs;
+    try {
+      localStorage.setItem("visio-couleurs", reglages.couleurs ? "1" : "0");
+    } catch {
+      // Mémoire locale indisponible : réglage gardé pour la session.
+    }
+  });
   void appliquerApparence();
   dessinerCalques();
 });
+
+// Petit bouton « ↺ » à côté de « Couleurs » : revenir aux couleurs d'origine de la maquette.
+const btnReinit = el<HTMLButtonElement>("btn-couleurs-init");
+function majReinit() {
+  btnReinit.hidden = !couleursModifiees();
+}
+btnReinit.addEventListener("click", () => {
+  void reinitialiserCouleurs();
+  dessinerCalques();
+  alerte("Couleurs d'origine rétablies. Ctrl+Z ou ↶ pour revenir en arrière.", 3500);
+});
+persoModifiee.on(majReinit);
 try {
   reglages.couleurs = localStorage.getItem("visio-couleurs") === "1";
 } catch {
@@ -198,11 +235,11 @@ try {
 }
 
 el("btn-tout-afficher").addEventListener("click", () =>
-  void changerVisibilite([...maquettes.values()].map((m) => [m, true])),
+  void changerVisibilite([...maquettes.values()].map((m) => [m, true]), "tout afficher"),
 );
 
 el("btn-tout-retirer").addEventListener("click", () =>
-  void changerVisibilite([...maquettes.values()].map((m) => [m, false])),
+  void changerVisibilite([...maquettes.values()].map((m) => [m, false]), "tout masquer"),
 );
 
 // --- Vue ------------------------------------------------------------------------------

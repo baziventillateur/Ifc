@@ -31,6 +31,7 @@ import {
 } from "./client";
 import { compresser, decompresser, envoyerMaquette } from "./envoi";
 import { seDeconnecter } from "./compte";
+import { ouvrirVersions } from "../mise-a-jour";
 
 type Projet = { id: string; nom: string; proprietaire: string };
 type Fichier = {
@@ -48,10 +49,14 @@ const cheminsDe = (f: Fichier) => [f.chemin, f.chemin_frag].filter((c): c is str
 const CORBEILLE_JOURS = 60;
 type Personne = { utilisateur_id: string | null; email: string; prenom: string; role: string };
 
+type ProjetAutre = Projet & { titulaire: string; maquettes: number };
+
 const etat = {
   moi: { id: "", email: "", prenom: "" },
   admin: false,
   projets: [] as Projet[],
+  /** Administrateur : projets des autres comptes, chargés à la demande (« + »). */
+  autres: null as ProjetAutre[] | null,
   courant: null as Projet | null,
   fichiers: [] as Fichier[],
   corbeille: [] as Fichier[],
@@ -61,6 +66,7 @@ const etat = {
 const CLE_PROJET = "nexbim-projet";
 const btnAjouter = el<HTMLButtonElement>("btn-ajouter");
 const btnProjet = el<HTMLButtonElement>("btn-projet");
+const btnCompte = el<HTMLButtonElement>("btn-compte");
 
 const createur = () => !!etat.courant && etat.courant.proprietaire === etat.moi.id;
 const nomLocal = (nom: string) => nom.replace(/\.ifc$/i, "");
@@ -271,7 +277,7 @@ async function ouvrirProjet(projet: Projet | null) {
           const brut = await telechargerFichier(f.chemin);
           return new File([f.chemin.endsWith(".gz") ? await decompresser(brut) : brut], f.nom);
         },
-        sansFrag: (ifc?: File) => mettreANiveau(f, ifc),
+        sansFrag: createur() ? (ifc?: File) => mettreANiveau(f, ifc) : undefined,
       })),
     );
   }
@@ -330,6 +336,7 @@ export async function demarrerNuage(utilisateur: User) {
   ]);
   etat.moi.prenom = profil?.prenom ?? "";
   etat.admin = admin === true;
+  majCompte();
   await chargerProjets();
   let memorise: string | null = null;
   try {
@@ -341,7 +348,13 @@ export async function demarrerNuage(utilisateur: User) {
   const voulu = projetDemande();
   demanderProjet(null);
   const parLien = voulu ? etat.projets.find((p) => p.id === voulu) : undefined;
-  await ouvrirProjet(parLien ?? etat.projets.find((p) => p.id === memorise) ?? etat.projets[0] ?? null);
+  let cible = parLien ?? etat.projets.find((p) => p.id === memorise);
+  if (!cible && etat.admin && memorise) {
+    // L'administrateur retrouve le projet d'un autre compte qu'il consultait.
+    const { data } = await nuage.from("projets").select("id, nom, proprietaire").eq("id", memorise).maybeSingle();
+    if (data) cible = data as Projet;
+  }
+  await ouvrirProjet(cible ?? etat.projets[0] ?? null);
   if (voulu && !parLien) alerte("Ce projet n'est plus partagé avec vous.", 5000);
   else if (parLien && parLien.proprietaire !== etat.moi.id)
     alerte(`Projet « ${parLien.nom} » ouvert, en lecture seule.`, 4000);
@@ -544,9 +557,19 @@ function ouvrirPanneau(info = "") {
   // --- Mes projets : passer de l'un à l'autre, en créer un
   const miens = etat.projets.filter((p) => p.proprietaire === etat.moi.id).length;
   const peutCreer = etat.admin || miens < PROJETS_MAX;
-  corps.append(
-    section(etat.admin ? "Mes projets" : `Mes projets · ${miens}/${PROJETS_MAX}`),
-  );
+  const titreProjets = cree("div", "modale-titre avec-action");
+  titreProjets.append(cree("span", "", etat.admin ? "Mes projets" : `Mes projets · ${miens}/${PROJETS_MAX}`));
+  if (etat.admin) {
+    titreProjets.append(
+      bouton(
+        "btn-tous-projets",
+        etat.autres ? "−" : "+",
+        () => void basculerTousProjets(),
+        etat.autres ? "Masquer les projets des autres comptes" : "Voir les projets de tous les comptes (administrateur)",
+      ),
+    );
+  }
+  corps.append(titreProjets);
   if (etat.projets.length === 0) {
     corps.append(cree("p", "modale-aide", `Un projet regroupe jusqu'à ${MAQUETTES_MAX} maquettes IFC et les personnes que vous invitez.`));
   }
@@ -564,7 +587,35 @@ function ouvrirPanneau(info = "") {
     );
     listeProjets.append(ligne);
   }
-  if (etat.projets.length) corps.append(listeProjets);
+  // Administrateur : projet d'un autre compte en cours de consultation.
+  const courant = etat.courant;
+  if (courant && !etat.projets.some((p) => p.id === courant.id)) {
+    const l = bouton("projet-ligne actif autre", "", () => {}, "Projet affiché (accès administrateur)");
+    l.append(cree("span", "projet-nom", courant.nom), cree("span", "projet-role", "admin · affiché"));
+    listeProjets.prepend(l);
+  }
+  if (listeProjets.childElementCount) corps.append(listeProjets);
+  if (etat.admin && etat.autres) {
+    corps.append(section(`Tous les projets · ${etat.autres.length}`));
+    const listeAutres = cree("div", "projets-liste");
+    for (const p of etat.autres) {
+      const actif = p.id === etat.courant?.id;
+      const l = bouton("projet-ligne autre" + (actif ? " actif" : ""), "", () => {
+        if (actif) return;
+        fermer();
+        void ouvrirProjet(p).then(() =>
+          alerte(`Projet de ${p.titulaire} ouvert en lecture seule (accès administrateur).`, 4500),
+        );
+      }, `Ouvrir le projet de ${p.titulaire}`);
+      l.append(
+        cree("span", "projet-nom", p.nom),
+        cree("span", "projet-role", `${p.titulaire} · ${p.maquettes} maq.`),
+      );
+      listeAutres.append(l);
+    }
+    if (!etat.autres.length) listeAutres.append(cree("p", "modale-aide", "Aucun autre projet pour l'instant."));
+    corps.append(listeAutres);
+  }
   if (peutCreer) {
     corps.append(
       formulaire("Nom du nouveau projet", "Créer", "text", async (nom) => {
@@ -735,7 +786,9 @@ function ouvrirPanneau(info = "") {
             await chargerProjets();
             await ouvrirProjet(etat.projets[0] ?? null);
           })
-        : bouton("lien danger", "Quitter ce projet", async () => {
+        : !etat.projets.some((p) => p.id === projet.id)
+          ? cree("span", "modale-aide", "Accès administrateur : lecture seule.")
+          : bouton("lien danger", "Quitter ce projet", async () => {
             const oui = await confirmer(
               "Quitter le projet ?",
               `Vous ne verrez plus les maquettes de « ${projet.nom} ». Le créateur pourra vous inviter à nouveau.`,
@@ -750,7 +803,6 @@ function ouvrirPanneau(info = "") {
     );
   }
 
-  corps.append(section("Compte"), ligne(etat.moi.prenom || etat.moi.email, etat.moi.prenom ? etat.moi.email : ""));
   const pied = cree("div", "modale-pied");
   if (!exempleAffiche()) {
     pied.append(
@@ -767,8 +819,6 @@ function ouvrirPanneau(info = "") {
       }),
     );
   }
-  if (etat.admin) pied.append(bouton("btn", "Panneau admin", () => void ouvrirAdmin()));
-  pied.append(bouton("btn", "Se déconnecter", () => void seDeconnecter()));
   const signature = cree("a", "signature", "NexBim · une application PaceApp");
   signature.href = "https://paceapp.fr";
   signature.target = "_blank";
@@ -777,6 +827,133 @@ function ouvrirPanneau(info = "") {
 }
 
 btnProjet.addEventListener("click", () => ouvrirPanneau());
+
+/** Administrateur : affiche ou masque les projets de tous les comptes. */
+async function basculerTousProjets() {
+  if (etat.autres) {
+    etat.autres = null;
+    return ouvrirPanneau();
+  }
+  const [{ data: tous, error }, { data: maq }] = await Promise.all([
+    nuage.from("projets").select("id, nom, proprietaire, cree_le").order("cree_le", { ascending: false }),
+    nuage.from("maquettes").select("projet_id").is("supprime_le", null),
+  ]);
+  if (error) return alerte(messageErreur(error));
+  const autres = ((tous ?? []) as Projet[]).filter(
+    (p) => p.proprietaire !== etat.moi.id && !etat.projets.some((x) => x.id === p.id),
+  );
+  const titulaires = [...new Set(autres.map((p) => p.proprietaire))];
+  const { data: profils } = titulaires.length
+    ? await nuage.from("profils").select("id, prenom, email").in("id", titulaires)
+    : { data: [] };
+  const noms = new Map(
+    ((profils ?? []) as { id: string; prenom: string; email: string }[]).map((x) => [x.id, x.prenom || x.email]),
+  );
+  const compte = new Map<string, number>();
+  for (const m of (maq ?? []) as { projet_id: string }[]) compte.set(m.projet_id, (compte.get(m.projet_id) ?? 0) + 1);
+  etat.autres = autres.map((p) => ({ ...p, titulaire: noms.get(p.proprietaire) ?? "compte inconnu", maquettes: compte.get(p.id) ?? 0 }));
+  ouvrirPanneau();
+}
+
+// --- Menu du compte (pastille en haut à droite, comme dans PaceApp) ------------------
+
+const SVG = (d: string) =>
+  `<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICONES_MENU = {
+  admin: SVG('<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.3 7.5 9.5 4.3-1.2 7.5-4.9 7.5-9.5V6L12 3Z"/>'),
+  projets: SVG('<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2.2h8.8A1.5 1.5 0 0 1 21 9.7v8.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5Z"/>'),
+  versions: SVG('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'),
+  applis: SVG('<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>'),
+  sortie: SVG('<path d="M15 4h3.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H15"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/>'),
+};
+
+const AUTRES_APPLIS = [
+  { nom: "PaceApp", url: "https://paceapp.fr", texte: "Dossiers, notes et courriers" },
+  { nom: "CovoitGo", url: "https://covoitgo.paceapp.fr", texte: "Covoiturage du quotidien" },
+  { nom: "Bonplein", url: "https://bonplein.paceapp.fr", texte: "Prix des carburants en direct" },
+  { nom: "Malino", url: "https://malino.paceapp.fr", texte: "Maths et lecture pour les enfants" },
+];
+
+function majCompte() {
+  const nom = (etat.moi.prenom || etat.moi.email).trim();
+  btnCompte.textContent = (nom[0] ?? "?").toUpperCase();
+  btnCompte.title = `Mon compte · ${etat.moi.email}`;
+  btnCompte.classList.toggle("admin", etat.admin);
+  btnCompte.hidden = false;
+}
+
+let menuCompte: HTMLElement | null = null;
+
+function fermerMenuCompte() {
+  menuCompte?.remove();
+  menuCompte = null;
+  btnCompte.setAttribute("aria-expanded", "false");
+  window.removeEventListener("pointerdown", dehorsMenuCompte, true);
+  window.removeEventListener("keydown", toucheMenuCompte, true);
+}
+function dehorsMenuCompte(e: PointerEvent) {
+  const cible = e.target as Node;
+  if (menuCompte?.contains(cible) || btnCompte.contains(cible)) return;
+  fermerMenuCompte();
+}
+function toucheMenuCompte(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  e.stopImmediatePropagation();
+  fermerMenuCompte();
+}
+
+function ouvrirMenuCompte() {
+  if (menuCompte) return fermerMenuCompte();
+  const menu = cree("div", "menu-compte");
+  menu.setAttribute("role", "menu");
+  const entete = cree("div", "menu-compte-entete");
+  entete.append(cree("strong", "", etat.moi.prenom || "Mon compte"), cree("span", "", etat.moi.email));
+  menu.append(entete);
+  const item = (classe: string, icone: string, texte: string, action: () => void) => {
+    const b = bouton("menu-compte-item" + (classe ? ` ${classe}` : ""), "", () => {
+      fermerMenuCompte();
+      action();
+    });
+    b.setAttribute("role", "menuitem");
+    b.innerHTML = icone;
+    b.append(cree("span", "", texte));
+    menu.append(b);
+  };
+  if (etat.admin) item("admin", ICONES_MENU.admin, "Panneau admin", () => void ouvrirAdmin());
+  item("", ICONES_MENU.projets, "Mes projets", () => ouvrirPanneau());
+  item("", ICONES_MENU.versions, "Versions et mises à jour", () => ouvrirVersions());
+  item("", ICONES_MENU.applis, "Autres applications PaceApp", ouvrirAutresApplis);
+  menu.append(cree("div", "menu-compte-sep"));
+  item("danger", ICONES_MENU.sortie, "Se déconnecter", () => {
+    void confirmer(
+      "Se déconnecter ?",
+      "Pour revenir, il faudra saisir à nouveau votre e-mail et votre mot de passe.",
+      "Se déconnecter",
+    ).then((oui) => (oui ? seDeconnecter() : fermer()));
+  });
+  document.body.append(menu);
+  menuCompte = menu;
+  btnCompte.setAttribute("aria-expanded", "true");
+  window.addEventListener("pointerdown", dehorsMenuCompte, true);
+  window.addEventListener("keydown", toucheMenuCompte, true);
+}
+
+function ouvrirAutresApplis() {
+  const corps = ouvrirFenetre("Autres applications PaceApp");
+  corps.append(cree("p", "modale-aide", "Les autres applications du groupe PaceApp, avec le même esprit."));
+  const liste = cree("div", "projets-liste");
+  for (const a of AUTRES_APPLIS) {
+    const lien = cree("a", "projet-ligne");
+    lien.href = a.url;
+    lien.target = "_blank";
+    lien.rel = "noopener";
+    lien.append(cree("span", "projet-nom", a.nom), cree("span", "projet-role", a.texte));
+    liste.append(lien);
+  }
+  corps.append(liste);
+}
+
+btnCompte.addEventListener("click", ouvrirMenuCompte);
 
 // --- Panneau admin ----------------------------------------------------------------
 

@@ -7,7 +7,15 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { composants, monde, rafraichir, reglerPost, Signal, type MaterialDefinition } from "./noyau";
-import { maquettes, reglages, type Maquette } from "./registre";
+import {
+  appliquerEtatCouleurs,
+  changement,
+  etatCouleurs,
+  maquettes,
+  reglages,
+  type EtatCouleurs,
+  type Maquette,
+} from "./registre";
 import { enRejeu, noter } from "./historique";
 import {
   apresApercu,
@@ -437,13 +445,27 @@ function idsAvecGeometrie(m: Maquette) {
 
 // --- Historique : couleurs, masquage et isolement s'annulent avec Ctrl+Z ---------------
 
-type Instantane = { perso: string; masques: [string, number[]][]; isolement: [string, number[]][] | null };
+/** Affichage d'une maquette entière : visible, transparente, opacité. */
+type VueMaquette = [string, boolean, boolean, number];
+type Instantane = {
+  perso: string;
+  masques: [string, number[]][];
+  isolement: [string, number[]][] | null;
+  couleurs: EtatCouleurs;
+  vues: VueMaquette[];
+};
 const copieIds = (ids: Ids): [string, number[]][] => [...ids].filter(([, s]) => s.size).map(([k, s]) => [k, [...s]]);
 
 function instantane(): Instantane {
   const p: Record<string, [number, Teinte][]> = {};
   for (const [mid, carte] of perso) if (carte.size) p[mid] = [...carte];
-  return { perso: JSON.stringify(p), masques: copieIds(masquesManuels), isolement: isolement ? copieIds(isolement) : null };
+  return {
+    perso: JSON.stringify(p),
+    masques: copieIds(masquesManuels),
+    isolement: isolement ? copieIds(isolement) : null,
+    couleurs: etatCouleurs(),
+    vues: [...maquettes.values()].map((m) => [m.id, m.modele.object.visible, m.transparente, m.opacite]),
+  };
 }
 
 async function restaurer(etat: Instantane) {
@@ -454,9 +476,18 @@ async function restaurer(etat: Instantane) {
   masquesManuels.clear();
   for (const [mid, liste] of etat.masques) masquesManuels.set(mid, new Set(liste));
   isolement = etat.isolement ? new Map(etat.isolement.map(([k, l]) => [k, new Set(l)])) : null;
+  appliquerEtatCouleurs(etat.couleurs);
+  for (const [mid, visible, transparente, opacite] of etat.vues) {
+    const m = maquettes.get(mid);
+    if (!m) continue;
+    m.modele.object.visible = visible;
+    m.transparente = transparente;
+    m.opacite = opacite;
+  }
   sauverPerso();
   persoModifiee.emit();
   masquesModifies.emit();
+  changement.emit();
   await appliquerApparence();
   await appliquerVisibilite();
 }
@@ -569,6 +600,33 @@ export function definirTeinte(ids: Ids, changement: Partial<Teinte> | null) {
 
 export function effacerPerso() {
   return avecHistorique("couleurs rétablies", () => effacerPersoBrut(), undefined);
+}
+
+/**
+ * Note dans l'historique (Ctrl+Z / Ctrl+Y) un changement d'affichage fait ailleurs :
+ * couleur ou transparence d'une maquette, mode « Couleurs », maquette masquée…
+ * Deux changements de même clé qui se suivent de près n'en font qu'un (curseur).
+ */
+export function enregistrer<T>(libelle: string, changement: () => T, cle?: string): T {
+  return avecHistorique(libelle, changement, cle);
+}
+
+/** Couleurs d'origine partout : mode « Couleurs » éteint, plus aucune couleur choisie à la main. */
+export function reinitialiserCouleurs() {
+  return avecHistorique("couleurs d'origine", () => {
+    appliquerEtatCouleurs({ mode: false, maquettes: {}, lots: {} });
+    perso.clear();
+    sauverPerso();
+    persoModifiee.emit();
+    changement.emit();
+    return appliquerApparence();
+  });
+}
+
+/** Vrai si quelque chose diffère des couleurs d'origine. */
+export function couleursModifiees() {
+  const e = etatCouleurs();
+  return e.mode || Object.keys(e.maquettes).length > 0 || Object.keys(e.lots).length > 0 || nombrePerso() > 0;
 }
 
 export function definirIsolement(ids: Ids | null) {

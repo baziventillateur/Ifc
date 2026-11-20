@@ -48,9 +48,18 @@
         <span class="sous-titre" id="nom-maquette"></span>
       </div>
       <div class="actions">
+        <span class="annuler-refaire" id="annuler-refaire" hidden>
+          <button id="btn-annuler" class="btn-historique" type="button" aria-label="Annuler la dernière action">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+          </button>
+          <button id="btn-retablir" class="btn-historique" type="button" aria-label="Rétablir l'action annulée">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>
+          </button>
+        </span>
         <button id="btn-ajouter" class="btn principal" type="button" title="Ajouter une ou plusieurs maquettes IFC">+<span class="long"> Maquette</span></button>
         <button id="btn-projet" class="btn" type="button" title="Projet, personnes invitées et compte">Projet</button>
         <button id="btn-recadrer" class="btn" type="button" title="Recadrer la vue">Recadrer</button>
+        <button id="btn-compte" class="btn-compte" type="button" aria-label="Mon compte" aria-haspopup="menu" hidden></button>
       </div>
       <input id="fichier" type="file" accept=".ifc" multiple hidden />
     </header>
@@ -65,7 +74,10 @@
         </button>
         <div class="calques-liste" id="calques-liste"></div>
         <div class="calques-pied" id="calques-pied">
-          <button class="lien bascule" id="btn-couleurs" type="button" aria-pressed="false" title="Colorer les maquettes (structure, CVC, électricité…)">Couleurs</button>
+          <span class="pied-couleurs">
+            <button class="lien bascule" id="btn-couleurs" type="button" aria-pressed="false" title="Colorer les maquettes (structure, CVC, électricité…)">Couleurs</button>
+            <button class="lien reinit-couleurs" id="btn-couleurs-init" type="button" hidden title="Réinitialiser : couleurs d'origine de la maquette" aria-label="Réinitialiser les couleurs">↺</button>
+          </span>
           <button class="lien plusieurs" id="btn-tout-afficher" type="button">Tout afficher</button>
           <button class="lien plusieurs" id="btn-tout-retirer" type="button">Tout masquer</button>
         </div>

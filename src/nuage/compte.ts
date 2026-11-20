@@ -146,7 +146,8 @@ function traduire(message: string) {
     return "Trop de demandes. Réessayez dans une minute.";
   if (m.includes("already registered")) return "Un compte existe déjà avec cet e-mail.";
   if (m.includes("password")) return "Mot de passe refusé : 8 caractères au minimum.";
-  if (m.includes("failed to fetch")) return "Connexion au serveur impossible.";
+  if (m.includes("failed to fetch") || m.includes("load failed") || m.includes("networkerror"))
+    return "Connexion au serveur impossible. Sur un ordinateur d'entreprise, le filtre réseau bloque peut-être NexBim : essayez depuis votre téléphone ou un autre réseau.";
   return "Une erreur est survenue. Réessayez.";
 }
 

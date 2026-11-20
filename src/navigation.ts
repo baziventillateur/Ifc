@@ -182,14 +182,16 @@ window.addEventListener("pointercancel", (e) => {
 
 // --- Projection : un bouton rond à côté de l'œil ---------------------------------------
 // Toucher : bascule entre la vue orthogonale (sans perspective) et la perspective.
-// Appui long : liste des angles de vue (60° à 150°) ; on glisse le doigt sur la valeur
-// et on le lève, ou on la touche ensuite. L'angle choisi est gardé sur l'appareil.
-const ANGLES = [60, 85, 105, 120, 135, 150];
+// Appui long : deux angles de vue, normal (60°) et large (100°, pour les intérieurs) ;
+// on glisse le doigt sur la valeur et on le lève, ou on la touche ensuite.
+// L'angle choisi est gardé sur l'appareil.
+const ANGLES = [60, 100];
 const CLE_ANGLE = "nexbim-angle";
 let angle = 60;
 try {
+  // Un ancien réglage (85°, 120°…) prend l'angle proposé le plus proche.
   const lu = Number(localStorage.getItem(CLE_ANGLE));
-  if (ANGLES.includes(lu)) angle = lu;
+  if (lu > 0) angle = ANGLES.reduce((m, a) => (Math.abs(a - lu) < Math.abs(m - lu) ? a : m));
 } catch {
   // Angle normal.
 }

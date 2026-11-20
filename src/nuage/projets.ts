@@ -18,7 +18,17 @@ import {
   ouvrirDepuisNuage,
   retirer,
 } from "../maquettes";
-import { adresseSite, MAQUETTES_MAX, nuage, PROJETS_MAX, OCTETS_MAX, OCTETS_MAX_ADMIN, taille } from "./client";
+import {
+  appeler,
+  demanderProjet,
+  MAQUETTES_MAX,
+  nuage,
+  projetDemande,
+  PROJETS_MAX,
+  OCTETS_MAX,
+  OCTETS_MAX_ADMIN,
+  taille,
+} from "./client";
 import { compresser, decompresser, envoyerMaquette } from "./envoi";
 import { seDeconnecter } from "./compte";
 
@@ -327,7 +337,14 @@ export async function demarrerNuage(utilisateur: User) {
   } catch {
     // Mémoire locale indisponible.
   }
-  await ouvrirProjet(etat.projets.find((p) => p.id === memorise) ?? etat.projets[0] ?? null);
+  // Lien reçu par e-mail : ce projet passe avant le dernier ouvert.
+  const voulu = projetDemande();
+  demanderProjet(null);
+  const parLien = voulu ? etat.projets.find((p) => p.id === voulu) : undefined;
+  await ouvrirProjet(parLien ?? etat.projets.find((p) => p.id === memorise) ?? etat.projets[0] ?? null);
+  if (voulu && !parLien) alerte("Ce projet n'est plus partagé avec vous.", 5000);
+  else if (parLien && parLien.proprietaire !== etat.moi.id)
+    alerte(`Projet « ${parLien.nom} » ouvert, en lecture seule.`, 4000);
 }
 
 // --- Dépôt de maquettes -----------------------------------------------------------
@@ -492,32 +509,32 @@ function formulaire(indication: string, libelle: string, type: string, envoyer: 
   return f;
 }
 
+/** Invite (ou réinvite) une adresse dans le projet affiché ; renvoie le message d'erreur éventuel. */
 async function inviter(email: string) {
   if (!etat.courant) return;
-  const { data, error } = await nuage.functions.invoke("inviter", {
-    body: { projet: etat.courant.id, email, retour: adresseSite },
+  const { data, code } = await appeler<{ etat?: string; mail?: boolean }>("inviter", {
+    projet: etat.courant.id,
+    email,
   });
-  let resultat = data as { etat?: string; mail?: boolean; erreur?: string } | null;
-  if (error) {
-    try {
-      resultat = await (error as { context?: Response }).context?.json();
-    } catch {
-      resultat = null;
-    }
-    const code = resultat?.erreur;
-    if (code === "EMAIL") return "Adresse e-mail incorrecte.";
-    if (code === "SOI_MEME") return "C'est votre propre adresse.";
-    if (code === "LIMITE") return "Maximum de 20 personnes par projet atteint.";
-    return "L'invitation a échoué. Réessayez.";
-  }
+  if (code === "EMAIL") return "Adresse e-mail incorrecte.";
+  if (code === "SOI_MEME") return "C'est votre propre adresse.";
+  if (code === "LIMITE") return "Maximum de 20 personnes par projet atteint.";
+  if (code === "TROP_TOT") return "Invitation déjà envoyée il y a moins d'une minute.";
+  if (code === "QUOTA") return "Trop d'invitations envoyées aujourd'hui. Réessayez demain.";
+  if (code) return "L'invitation a échoué. Réessayez.";
   await chargerDetails();
-  ouvrirPanneau(
-    resultat?.etat === "ajoute"
-      ? `${email} a déjà un compte : ajouté au projet.`
-      : resultat?.mail
-        ? `Invitation envoyée par e-mail à ${email}.`
-        : `${email} est invité, mais l'e-mail n'a pas pu partir. Il entrera dans le projet en créant son compte.`,
-  );
+  const mail = data?.mail;
+  const messages: Record<string, string> = {
+    deja: `${email} fait déjà partie du projet.`,
+    ajoute: mail
+      ? `${email} a déjà un compte NexBim : ajouté au projet et prévenu par e-mail.`
+      : `${email} a déjà un compte NexBim : ajouté au projet (l'e-mail de notification n'a pas pu partir).`,
+    invite: mail
+      ? `Invitation envoyée à ${email}. Il entrera dans le projet en créant son compte depuis l'e-mail.`
+      : `${email} est invité, mais l'e-mail n'a pas pu partir. Réessayez avec « Renvoyer ».`,
+    renvoye: mail ? `Nouvelle invitation envoyée à ${email}.` : `L'e-mail n'a pas pu partir. Réessayez dans une minute.`,
+  };
+  ouvrirPanneau(messages[data?.etat ?? ""] ?? "Invitation enregistrée.");
 }
 
 function ouvrirPanneau(info = "") {
@@ -648,26 +665,55 @@ function ouvrirPanneau(info = "") {
       }
     }
 
-    corps.append(section("Personnes"));
+    corps.append(section(`Personnes · ${etat.personnes.length}`));
     for (const p of etat.personnes) {
-      const role = p.role === "createur" ? "Créateur" : p.role === "invite" ? "Invité · lecture seule" : "Invitation en attente";
-      const retrait =
-        createur() && p.role !== "createur"
-          ? bouton("lien danger", "Retirer", async () => {
-              const requete =
-                p.role === "invite"
-                  ? nuage.from("membres").delete().eq("projet_id", projet.id).eq("utilisateur_id", p.utilisateur_id)
-                  : nuage.from("invitations").delete().eq("projet_id", projet.id).eq("email", p.email);
-              const { error } = await requete;
-              if (error) return alerte(messageErreur(error));
-              await chargerDetails();
-              ouvrirPanneau();
-            })
-          : undefined;
-      corps.append(ligne(p.prenom || p.email, p.prenom ? `${p.email} · ${role}` : role, retrait));
+      const role =
+        p.role === "createur" ? "Créateur" : p.role === "invite" ? "Invité · lecture seule" : "Invitation envoyée · en attente";
+      let actions: HTMLElement | undefined;
+      if (createur() && p.role !== "createur") {
+        actions = cree("div", "modale-actions");
+        if (p.role !== "invite") {
+          actions.append(
+            bouton("lien", "Renvoyer", async () => {
+              const erreur = await inviter(p.email);
+              if (erreur) alerte(erreur);
+            }, "Renvoyer l'e-mail d'invitation"),
+          );
+        }
+        actions.append(
+          bouton("lien danger", "Retirer", async () => {
+            const qui = p.prenom || p.email;
+            const oui = await confirmer(
+              p.role === "invite" ? "Retirer cette personne ?" : "Annuler l'invitation ?",
+              p.role === "invite"
+                ? `${qui} n'aura plus accès au projet « ${projet.nom} ». Vous pourrez l'inviter à nouveau.`
+                : `Le lien envoyé à ${p.email} ne fonctionnera plus.`,
+              p.role === "invite" ? "Retirer" : "Annuler l'invitation",
+              true,
+            );
+            if (!oui) return ouvrirPanneau();
+            const requete =
+              p.role === "invite"
+                ? nuage.from("membres").delete().eq("projet_id", projet.id).eq("utilisateur_id", p.utilisateur_id)
+                : nuage.from("invitations").delete().eq("projet_id", projet.id).eq("email", p.email);
+            const { error } = await requete;
+            if (error) return alerte(messageErreur(error));
+            await chargerDetails();
+            ouvrirPanneau(p.role === "invite" ? `${qui} n'a plus accès au projet.` : `Invitation de ${p.email} annulée.`);
+          }, p.role === "invite" ? "Retirer l'accès" : "Annuler l'invitation"),
+        );
+      }
+      corps.append(ligne(p.prenom || p.email, p.prenom ? `${p.email} · ${role}` : role, actions));
     }
     if (createur()) {
       corps.append(formulaire("E-mail de la personne à inviter", "Inviter", "email", inviter));
+      corps.append(
+        cree(
+          "p",
+          "modale-aide",
+          "La personne reçoit un e-mail. Si elle n'a pas encore de compte, elle le crée depuis ce lien et entre directement dans le projet, en lecture seule.",
+        ),
+      );
     }
 
     corps.append(

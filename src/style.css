@@ -2718,3 +2718,30 @@ body:has(.porte) .version-etiquette {
 .outil-btn.outil-icone svg {
   display: block;
 }
+
+/* Écran d'invitation reçu par e-mail */
+.porte-intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.porte-adresse {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--bord);
+  border-radius: 6px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.porte-adresse span,
+.porte-aide {
+  font-size: 11px;
+  color: var(--doux);
+}
+.porte-aide {
+  margin: 0;
+  line-height: 1.4;
+}

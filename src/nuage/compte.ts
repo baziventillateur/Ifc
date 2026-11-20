@@ -2,7 +2,7 @@
 // choix du mot de passe après un lien reçu par e-mail.
 import type { User } from "@supabase/supabase-js";
 import { cree } from "../noyau";
-import { adresseSite, erreurLien, nuage, typeLien } from "./client";
+import { adresseSite, appeler, demanderProjet, erreurLien, jetonInvitation, nuage, typeLien } from "./client";
 
 type Mode = "connexion" | "inscription" | "oubli" | "motdepasse";
 
@@ -12,6 +12,10 @@ document.body.append(porte);
 
 let resoudre: (u: User) => void = () => {};
 let connecte = false;
+/** Écran d'invitation affiché : la session éventuelle ne fait pas entrer d'elle-même. */
+let enInvitation = !!jetonInvitation;
+
+type InfosInvitation = { email: string; projet: string; projet_id: string; invite_par: string; compte: boolean };
 
 const SVG_MAQUETTE = `<svg viewBox="0 0 400 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Aperçu d'une maquette 3D" font-family="system-ui, sans-serif">
 <defs>
@@ -146,7 +150,7 @@ function traduire(message: string) {
   return "Une erreur est survenue. Réessayez.";
 }
 
-function afficher(mode: Mode, info = "", avecPrenom = false) {
+function afficher(mode: Mode, info = "", avecPrenom = false, emailInitial = "") {
   porte.hidden = false;
   porte.classList.remove("porte-accueil");
   const boite = cree("form", "porte-boite");
@@ -168,6 +172,7 @@ function afficher(mode: Mode, info = "", avecPrenom = false) {
   const message = cree("p", "porte-message", info);
   const prenom = champ("Prénom", "text", "prenom", "given-name");
   const email = champ("E-mail", "email", "email", "email");
+  email.saisie.value = emailInitial;
   const passe = champ(
     mode === "connexion" ? "Mot de passe" : "Mot de passe (8 caractères min.)",
     "password",
@@ -262,7 +267,93 @@ function afficher(mode: Mode, info = "", avecPrenom = false) {
   });
 
   porte.replaceChildren(boite);
-  boite.querySelector("input")?.focus();
+  (emailInitial ? passe.saisie : boite.querySelector("input"))?.focus();
+}
+
+/** Arrivée par le lien d'invitation reçu par e-mail : prénom et mot de passe, puis le projet. */
+function ecranInvitation(infos: InfosInvitation, jeton: string, autreSession: boolean) {
+  porte.hidden = false;
+  porte.classList.remove("porte-accueil");
+  const boite = cree("form", "porte-boite");
+  boite.append(marqueNexBim(), cree("h1", "porte-titre", "Vous êtes invité"));
+
+  const intro = cree("p", "porte-intro");
+  if (infos.invite_par) intro.append(cree("strong", "", infos.invite_par), " vous invite sur le projet ");
+  else intro.append("Vous êtes invité sur le projet ");
+  intro.append(cree("strong", "", `« ${infos.projet} »`), ", en lecture seule.");
+  boite.append(intro);
+
+  const adresse = cree("p", "porte-adresse");
+  adresse.append(cree("span", "", "Votre adresse"), cree("strong", "", infos.email));
+  boite.append(adresse);
+
+  const message = cree("p", "porte-message");
+  const verConnexion = (info: string) => {
+    enInvitation = false;
+    demanderProjet(infos.projet_id);
+    afficher("connexion", info, false, infos.email);
+  };
+
+  if (infos.compte) {
+    const ok = cree("button", "btn principal porte-valider", "Se connecter pour ouvrir le projet");
+    ok.type = "button";
+    ok.addEventListener("click", () => verConnexion("Vous avez déjà un compte : connectez-vous pour ouvrir le projet."));
+    boite.append(message, ok);
+  } else {
+    boite.append(cree("p", "porte-aide", "Indiquez votre prénom et choisissez un mot de passe pour créer votre compte."));
+    const prenom = champ("Prénom", "text", "prenom", "given-name");
+    const passe = champ("Mot de passe (8 caractères min.)", "password", "password", "new-password");
+    const valider = cree("button", "btn principal porte-valider", "Accepter et ouvrir le projet");
+    valider.type = "submit";
+    boite.append(prenom.bloc, passe.bloc, message, valider);
+    const liens = cree("div", "porte-liens");
+    const deja = cree("button", "lien", "J'ai déjà un compte");
+    deja.type = "button";
+    deja.addEventListener("click", () => verConnexion(""));
+    liens.append(deja);
+    boite.append(liens);
+
+    boite.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      valider.disabled = true;
+      message.classList.remove("ok");
+      message.textContent = "…";
+      try {
+        const motdepasse = passe.saisie.value;
+        const { code } = await appeler<{ ok: boolean }>("invitation", {
+          action: "accepter",
+          jeton,
+          prenom: prenom.saisie.value.trim(),
+          motdepasse,
+        });
+        if (code === "DEJA_INSCRIT") return verConnexion("Vous avez déjà un compte : connectez-vous pour ouvrir le projet.");
+        if (code === "INVALIDE")
+          return verConnexion("Cette invitation n'est plus valable. Demandez à la personne qui vous a invité de vous la renvoyer.");
+        if (code === "MOT_DE_PASSE") return void (message.textContent = "Mot de passe refusé : 8 caractères au minimum.");
+        if (code === "PRENOM") return void (message.textContent = "Indiquez votre prénom.");
+        if (code) return void (message.textContent = "La création du compte a échoué. Réessayez.");
+        // Compte créé : on entre directement dans le projet.
+        demanderProjet(infos.projet_id);
+        if (autreSession) await nuage.auth.signOut({ scope: "local" });
+        enInvitation = false;
+        const { error } = await nuage.auth.signInWithPassword({ email: infos.email, password: motdepasse });
+        if (error) verConnexion("Compte créé. Connectez-vous avec votre mot de passe.");
+      } catch (err) {
+        console.error(err);
+        message.textContent = "Connexion au serveur impossible.";
+      } finally {
+        valider.disabled = false;
+      }
+    });
+  }
+
+  const signature = cree("a", "signature", "Une application PaceApp");
+  signature.href = "https://paceapp.fr";
+  signature.target = "_blank";
+  signature.rel = "noopener";
+  boite.append(signature);
+  porte.replaceChildren(boite);
+  boite.querySelector<HTMLInputElement>("input")?.focus();
 }
 
 function entrer(u: User) {
@@ -290,13 +381,40 @@ export function attendreSession(): Promise<User> {
         afficher("motdepasse");
         return;
       }
-      if (evenement === "SIGNED_IN" && session && !choixMotDePasse) entrer(session.user);
+      if (evenement === "SIGNED_IN" && session && !choixMotDePasse && !enInvitation) entrer(session.user);
     });
 
-    void nuage.auth.getSession().then(({ data }) => {
+    void nuage.auth.getSession().then(async ({ data }) => {
       if (window.location.hash.includes("access_token") || window.location.hash.includes("error"))
         history.replaceState(null, "", window.location.pathname + window.location.search);
       const session = data.session;
+      if (jetonInvitation) {
+        const { data: infos, code } = await appeler<InfosInvitation>("invitation", {
+          action: "lire",
+          jeton: jetonInvitation,
+        });
+        if (!code && infos?.email) {
+          if (session && (session.user.email ?? "").toLowerCase() === infos.email) {
+            // Déjà connecté avec la bonne adresse : on ouvre le projet.
+            enInvitation = false;
+            demanderProjet(infos.projet_id);
+            entrer(session.user);
+          } else {
+            ecranInvitation(infos, jetonInvitation, !!session);
+          }
+          return;
+        }
+        enInvitation = false;
+        if (session) entrer(session.user);
+        else
+          afficher(
+            "connexion",
+            code === "INVALIDE"
+              ? "Cette invitation a déjà servi ou n'est plus valable. Si vous avez créé votre compte, connectez-vous ; sinon, demandez qu'on vous la renvoie."
+              : "Connexion au serveur impossible. Réessayez.",
+          );
+        return;
+      }
       if (session && (typeLien === "invite" || typeLien === "recovery")) {
         choixMotDePasse = true;
         afficher("motdepasse", "", typeLien === "invite");

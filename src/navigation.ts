@@ -449,19 +449,17 @@ monde.renderer!.onBeforeUpdate.add(() => {
   }
 });
 
-// --- Vue orthogonale : jamais de coupe due à la caméra -------------------------------
-// Sans perspective, la limite proche de la caméra est un plan qui tranche toute la
-// largeur de l'image : en s'approchant (ou en passant en vue orthogonale depuis
-// l'intérieur), une coupe apparaissait et suivait la caméra. Les limites englobent
-// maintenant toute la maquette, devant comme derrière la caméra.
+// --- Vue orthogonale : profondeur de dessin ----------------------------------------
+// Rien n'est dessiné derrière la caméra (l'ombrage des creux y donnait des zones
+// noires) ; devant, on voit jusqu'au bout de la maquette, même de très loin.
 const centreBoite = new THREE.Vector3();
 function bornerOrtho() {
   const o = monde.camera.threeOrtho;
   boiteScene.getCenter(centreBoite);
-  const rayon = o.position.distanceTo(centreBoite) + boiteScene.min.distanceTo(boiteScene.max) / 2 + 50;
-  if (Math.abs(-o.near - rayon) > rayon * 0.1 || Math.abs(o.far - rayon) > rayon * 0.1) {
-    o.near = -rayon;
-    o.far = rayon;
+  const loin = Math.max(5000, o.position.distanceTo(centreBoite) + boiteScene.min.distanceTo(boiteScene.max));
+  if (o.near !== 0.05 || Math.abs(o.far - loin) > loin * 0.1) {
+    o.near = 0.05;
+    o.far = loin;
     o.updateProjectionMatrix();
   }
 }

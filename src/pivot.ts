@@ -104,6 +104,7 @@ window.addEventListener(
     if (doigts.size === 2) {
       const [a, b] = [...doigts.values()];
       dernierMilieu = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      zoomGeste = performance.now();
     }
   },
   true,
@@ -252,11 +253,45 @@ function profondeurDevant(p: THREE.Vector3) {
   return p.clone().sub(cam.position).dot(cam.getWorldDirection(new THREE.Vector3()));
 }
 
-// --- Vue orthogonale : la caméra ne bouge pas en zoomant ---------------------------
-// Elle avançait avec le zoom pour traverser les murs, mais sans perspective le plan de
-// coupe de la caméra tranche toute la largeur de l'image : on voyait une coupe qui
-// suivait la caméra. La vue orthogonale montre maintenant toujours la maquette entière
-// (navigation.ts) ; pour voir l'intérieur : la coupe (ciseaux) ou la perspective.
+// --- Vue orthogonale : traverser les murs en zoomant, sans coupe ailleurs --------------
+// Sans perspective, la limite proche de la caméra est un plan qui tranche toute la
+// largeur de l'image : quand la caméra avançait avec le zoom, ce plan coupait aussi ce
+// qui était plus près que l'objet visé (une façade sous la toiture, par exemple), et
+// la coupe suivait la caméra. La caméra se tient maintenant loin devant ce qu'on vise
+// (RECUL fois la hauteur de vue) : rien d'autre n'est tranché. Ce n'est qu'en zoomant
+// tout près (vue de moins d'un mètre et demi de haut environ) qu'elle atteint la
+// surface visée et passe au travers. En dézoomant, elle recule d'autant.
+const RECUL = 1.5;
+const FRANCHIR = 2;
+let zoomGeste = 0;
+let zoomPrecedent = 1;
+
+function reculVoulu(zoom: number) {
+  const o = monde.camera.threeOrtho;
+  return (RECUL * (o.top - o.bottom)) / zoom - FRANCHIR;
+}
+
+monde.renderer!.onBeforeUpdate.add(() => {
+  const ortho = monde.camera.threeOrtho;
+  if (monde.camera.projection.current !== "Orthographic") {
+    zoomPrecedent = ortho.zoom;
+    return;
+  }
+  const avant = zoomPrecedent;
+  zoomPrecedent = ortho.zoom;
+  if (performance.now() - zoomGeste > 800 || !(avant > 0) || Math.abs(ortho.zoom / avant - 1) < 1e-5) return;
+  const variation = reculVoulu(avant) - reculVoulu(ortho.zoom); // > 0 en zoomant
+  let pas = variation;
+  if (variation > 0) {
+    // En zoomant : la caméra avance jusqu'à la distance voulue de ce qu'on vise, sans
+    // jamais reculer et sans aller plus de trois fois plus vite que le zoom (pas de saut).
+    const vise = (visee && performance.now() - visee.t < 1500 ? visee.point : null) ?? pointPince ?? pointTouche ?? dernierPoint;
+    const profondeur = vise ? profondeurDevant(vise) : null;
+    if (profondeur === null || !(profondeur > 0)) return;
+    pas = Math.min(Math.max(0, profondeur - reculVoulu(ortho.zoom)), 3 * variation);
+  }
+  if (Math.abs(pas) > 1e-5) void monde.camera.controls.dollyInFixed(pas, false);
+});
 
 // --- Molette : même règle, avec la distance de ce qui est sous la souris ---------------
 const toile = monde.renderer!.three.domElement;
@@ -289,6 +324,7 @@ toile.addEventListener("pointermove", (e) => {
 window.addEventListener(
   "wheel",
   (e) => {
+    zoomGeste = performance.now();
     const frais =
       !!visee &&
       performance.now() - visee.t < 700 &&

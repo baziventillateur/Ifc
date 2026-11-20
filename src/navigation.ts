@@ -1,7 +1,7 @@
 // Navigation à la souris et au clavier, façon jeu vidéo :
 // - bouton de la molette enfoncé : déplacer la vue, le point saisi reste sous la souris ;
 // - clic droit maintenu : tourner la tête sans bouger (comme une caméra posée dans la pièce) ;
-// - flèches : ↑ avancer, ↓ reculer, ← → tourner la tête ; Page préc. / suiv. : monter, descendre ;
+// - flèches : ↑ avancer, ↓ reculer, ← → pas de côté ; Page préc. / suiv. : monter, descendre ;
 //   Maj pour aller plus vite.
 import * as THREE from "three";
 import { completerTir } from "./deplacements";
@@ -160,9 +160,9 @@ window.addEventListener("pointermove", (e) => {
   }
   regard.x = e.clientX;
   regard.y = e.clientY;
-  // On tire l'image avec soi, au doigt comme au clic droit (comme une photo à 360°) :
-  // souris vers la gauche, on regarde à droite ; souris vers le bas, on regarde en haut.
-  const sens = -1;
+  // Souris : comme dans un jeu vidéo, le regard suit la souris (gauche → on regarde à
+  // gauche, haut → on regarde en haut). Doigt : on tire l'image avec soi (photo à 360°).
+  const sens = e.pointerType === "mouse" ? 1 : -1;
   // Au doigt, sur un petit écran, il faut tourner plus vite pour un même geste.
   const k = e.pointerType === "mouse" ? SENSIBILITE : SENSIBILITE * 1.8;
   tournerTete(sens * dx * k, sens * dy * k);
@@ -359,7 +359,6 @@ let rapide = false;
 let dernier = 0;
 let boucle = 0;
 const VITESSE = 4; // mètres par seconde
-const ROTATION = 70; // degrés par seconde
 
 function pas(t: number) {
   boucle = 0;
@@ -369,11 +368,11 @@ function pas(t: number) {
   const facteur = rapide ? 3 : 1;
   const sens = (plus: string, moins: string) => (enfoncees.has(plus) ? 1 : 0) - (enfoncees.has(moins) ? 1 : 0);
   const avance = sens("ArrowUp", "ArrowDown");
-  const tourne = sens("ArrowRight", "ArrowLeft");
+  // Gauche / droite : pas de côté, comme dans un jeu vidéo (la souris sert à tourner la tête).
+  const cote = sens("ArrowRight", "ArrowLeft");
   const monte = sens("PageUp", "PageDown");
 
-  if (tourne) tournerTete(tourne * ROTATION * dt * (rapide ? 1.6 : 1), 0);
-  if (avance || monte) {
+  if (avance || cote || monte) {
     if (avance && monde.camera.projection.current === "Orthographic") {
       // Sans perspective, avancer ne change rien à l'image : on agrandit la vue.
       const cam = monde.camera.three as THREE.OrthographicCamera;
@@ -388,7 +387,10 @@ function pas(t: number) {
       devant.setFromMatrixColumn(monde.camera.three.matrixWorld, 1).setY(0);
     }
     devant.normalize();
-    const d = devant.multiplyScalar(avance * VITESSE * facteur * dt);
+    const droite = devant.clone().cross(new THREE.Vector3(0, 1, 0));
+    const d = devant.multiplyScalar(avance).addScaledVector(droite, cote);
+    if (d.lengthSq() > 1) d.normalize();
+    d.multiplyScalar(VITESSE * facteur * dt);
     d.y += monte * VITESSE * 0.75 * facteur * dt;
     position.add(d);
     cible.add(d);

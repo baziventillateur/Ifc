@@ -4,19 +4,41 @@
 //   elle s'efface et la capture file dans l'onglet « Captures » (bord gauche).
 // - Chaque capture a un message, un statut (à traiter / traité) et son point de vue :
 //   « Voir dans la maquette » y ramène la caméra.
+// - Photos de chantier (visite à la première personne, puce « Photo ») : une vraie photo,
+//   rangée à l'endroit où l'on est avec la direction du regard et la focale. Une petite
+//   icône d'appareil photo, orientée comme la prise de vue, la retrouve dans la maquette :
+//   un toucher remet la caméra au même point de vue, photo superposée à la maquette.
 // Enregistrées dans le projet (seau « captures » + table captures) : le créateur et les
 // personnes invitées les retrouvent sur tous leurs appareils. Maquette d'essai : sur cet
 // écran seulement.
 import * as THREE from "three";
-import { alerte, bouton, cree, dateCourte, definirProjection, demanderConfirmation, el, estOrtho, monde, recentrerPivot, telecharger } from "./noyau";
+import {
+  ajusterDecalage,
+  alerte,
+  bloquerDecalage,
+  bouton,
+  cree,
+  dateCourte,
+  definirProjection,
+  demanderConfirmation,
+  el,
+  estOrtho,
+  monde,
+  rafraichir,
+  recentrerPivot,
+  telecharger,
+} from "./noyau";
+import { modeClicActif } from "./fiche";
 import { nuage } from "./nuage/client";
 import { monPrenom, projetCharge } from "./nuage/projets";
-import { quitterVisite, visiteActive } from "./visite";
+import { quitterVisite, suspendreVisite, visiteActive } from "./visite";
 
 type Statut = "a_traiter" | "traite";
-type Vue = { p: number[]; c: number[]; ortho: boolean; fov: number };
+/** Point de vue ; pour une photo, f35 = focale équivalente 24×36 (angle de prise de vue). */
+type Vue = { p: number[]; c: number[]; ortho: boolean; fov: number; f35?: number };
 type Capture = {
   id: string;
+  genre: "capture" | "photo";
   auteur_nom: string;
   cree_le: string;
   message: string;
@@ -29,6 +51,8 @@ type Capture = {
 };
 
 const IMAGE_MAX = 1600; // px, côté le plus long
+const PHOTO_MAX = 2048; // px, photos du chantier
+const FOCALE_DEFAUT = 24; // mm équivalent 24×36 : objectif principal d'un téléphone
 const VIGNETTE = 360;
 const SEAU = "captures";
 
@@ -71,6 +95,7 @@ async function capturer() {
   const [image, petite] = await Promise.all([versBlob(grande, 0.86), versBlob(reduire(grande, VIGNETTE), 0.8)]);
   const cap: Capture = {
     id: crypto.randomUUID(),
+    genre: "capture",
     auteur_nom: monPrenom(),
     cree_le: new Date().toISOString(),
     message: "",
@@ -99,6 +124,7 @@ async function envoyer(cap: Capture, image: Blob, petite: Blob) {
   if (!erreur) {
     const { error } = await nuage.from("captures").insert({
       id: cap.id,
+      genre: cap.genre,
       projet_id: p,
       auteur_nom: cap.auteur_nom.slice(0, 80),
       vue: cap.vue,
@@ -108,7 +134,7 @@ async function envoyer(cap: Capture, image: Blob, petite: Blob) {
     erreur = error;
   }
   if (!erreur) return;
-  console.error("Capture", erreur);
+  console.error(cap.genre === "photo" ? "Photo" : "Capture", erreur);
   cap.locale = true;
   alerte("La capture n'a pas pu être enregistrée dans le projet : elle reste sur cet écran.", 5000);
   majGalerie();
@@ -132,7 +158,10 @@ function notifier(cap: Capture) {
   img.src = vignettes.get(cap.id) ?? "";
   img.alt = "";
   const texte = cree("div", "capture-notif-texte");
-  texte.append(cree("strong", "", "Capture prise"), cree("span", "", cap.locale ? "Sur cet écran seulement" : "Ajouter un message ?"));
+  texte.append(
+    cree("strong", "", cap.genre === "photo" ? "Photo rangée ici" : "Capture prise"),
+    cree("span", "", cap.locale ? "Sur cet écran seulement" : "Ajouter un message ?"),
+  );
   const actions = cree("div", "capture-notif-actions");
   actions.append(
     bouton("capture-notif-btn principal", "Message", () => {
@@ -207,6 +236,7 @@ function majCoin() {
   coin.append(cree("span", "captures-coin-nombre", String(aTraiter || captures.length)));
   coin.classList.toggle("a-traiter", aTraiter > 0);
   coin.setAttribute("aria-label", `Captures : ${captures.length}, dont ${aTraiter} à traiter`);
+  majIcones();
 }
 
 // --- Galerie ----------------------------------------------------------------------------
@@ -262,6 +292,27 @@ function majGalerie(focus?: "message") {
     }),
     bouton("fermer", "✕", fermerGalerie, "Fermer"),
   );
+  const nbPhotos = captures.filter((c) => c.genre === "photo").length;
+  const options = cree("div", "captures-options");
+  if (nbPhotos) {
+    options.append(
+      bouton(
+        "visite-puce" + (iconesVisibles ? " actif" : ""),
+        iconesVisibles ? "📷 Icônes des photos affichées" : "📷 Icônes des photos masquées",
+        () => {
+          iconesVisibles = !iconesVisibles;
+          try {
+            localStorage.setItem(CLE_ICONES, iconesVisibles ? "1" : "0");
+          } catch {
+            // Gardé pour la session.
+          }
+          majIcones();
+          majGalerie();
+        },
+        "Afficher ou masquer les icônes des photos dans la maquette",
+      ),
+    );
+  }
   const grille = cree("div", "captures-grille");
   const liste = captures.filter((c) => filtre === "toutes" || c.statut === "a_traiter");
   if (!liste.length) {
@@ -276,6 +327,7 @@ function majGalerie(focus?: "message") {
     const v = vignettes.get(c.id);
     if (v) img.src = v;
     const info = cree("div", "capture-carte-info");
+    if (c.genre === "photo") carte.append(cree("span", "capture-genre", "📷 Photo"));
     info.append(
       cree("span", "capture-statut " + c.statut, libelleStatut(c.statut)),
       cree("span", "capture-carte-date", `${dateCourte(c.cree_le)}${c.auteur_nom ? " · " + c.auteur_nom : ""}`),
@@ -288,7 +340,7 @@ function majGalerie(focus?: "message") {
     });
     grille.append(carte);
   }
-  boite.replaceChildren(entete, grille);
+  boite.replaceChildren(entete, ...(nbPhotos ? [options] : []), grille);
   if (projet === null && captures.length) {
     boite.append(cree("p", "captures-note", "Maquette d'essai : les captures restent sur cet écran."));
   }
@@ -319,7 +371,7 @@ function dessinerDetail(c: Capture, focus?: "message") {
   img.alt = "Capture";
   img.src = vignettes.get(c.id) ?? "";
   void imageDe(c).then((u) => u && (img.src = u));
-  img.addEventListener("click", () => void annoter(c));
+  img.addEventListener("click", () => void (c.genre === "photo" ? voirPhoto(c) : annoter(c)));
 
   const statut = bouton("capture-statut grand " + c.statut, (c.statut === "traite" ? "✓ " : "") + libelleStatut(c.statut), async () => {
     const avant = c.statut;
@@ -351,7 +403,12 @@ function dessinerDetail(c: Capture, focus?: "message") {
   const actions = cree("div", "capture-actions");
   actions.append(
     bouton("visite-puce", "Annoter", () => void annoter(c)),
-    bouton("visite-puce", "Voir dans la maquette", () => void allerA(c), "Remettre la caméra à cet endroit"),
+    bouton(
+      "visite-puce",
+      c.genre === "photo" ? "Voir au point de vue" : "Voir dans la maquette",
+      () => void (c.genre === "photo" ? voirPhoto(c) : allerA(c)),
+      "Remettre la caméra à cet endroit",
+    ),
     bouton("visite-puce", "Télécharger", async () => {
       const u = await imageDe(c);
       if (!u) return;
@@ -549,7 +606,7 @@ async function charger(id: string | null) {
   if (id) {
     const { data, error } = await nuage
       .from("captures")
-      .select("id, auteur_nom, cree_le, message, statut, vue, largeur, hauteur")
+      .select("id, genre, auteur_nom, cree_le, message, statut, vue, largeur, hauteur")
       .eq("projet_id", id)
       .order("cree_le", { ascending: false })
       .limit(300);
@@ -565,6 +622,308 @@ async function charger(id: string | null) {
     }
   }
   majCoin();
+}
+
+// --- Photos de chantier, situées dans la maquette -------------------------------------------
+
+/** Focale équivalente 24×36 lue dans les données EXIF de la photo (si le téléphone la donne). */
+function focale35(buf: ArrayBuffer): number | null {
+  try {
+    const v = new DataView(buf);
+    if (v.getUint16(0) !== 0xffd8) return null;
+    let o = 2;
+    while (o + 10 < v.byteLength) {
+      const marque = v.getUint16(o);
+      const taille = v.getUint16(o + 2);
+      if (marque === 0xffe1 && v.getUint32(o + 4) === 0x45786966) {
+        const t = o + 10;
+        const le = v.getUint16(t) === 0x4949;
+        const u16 = (p: number) => v.getUint16(p, le);
+        const u32 = (p: number) => v.getUint32(p, le);
+        const entree = (debut: number, tag: number) => {
+          const n = u16(debut);
+          for (let i = 0; i < n; i++) if (u16(debut + 2 + i * 12) === tag) return debut + 2 + i * 12;
+          return -1;
+        };
+        const pointeur = entree(t + u32(t + 4), 0x8769);
+        if (pointeur < 0) return null;
+        const e = entree(t + u32(pointeur + 8), 0xa405);
+        if (e < 0) return null;
+        const f = u16(e + 8);
+        return f >= 10 && f <= 300 ? f : null;
+      }
+      if ((marque & 0xff00) !== 0xff00) return null;
+      o += 2 + taille;
+    }
+  } catch {
+    // EXIF illisible : focale par défaut.
+  }
+  return null;
+}
+
+let champPhoto: HTMLInputElement | null = null;
+
+/** Visite : ouvre l'appareil photo ; la photo est rangée au point de vue actuel. */
+export function prendrePhoto() {
+  // Le point de vue est noté au moment du toucher (avant de passer à l'appareil photo).
+  const vue = vueActuelle();
+  if (!champPhoto) {
+    champPhoto = cree("input");
+    champPhoto.type = "file";
+    champPhoto.accept = "image/*";
+    champPhoto.setAttribute("capture", "environment");
+    champPhoto.hidden = true;
+    document.body.append(champPhoto);
+  }
+  const champ = champPhoto;
+  champ.value = "";
+  champ.onchange = () => {
+    const f = champ.files?.[0];
+    champ.value = "";
+    if (f) void rangerPhoto(f, vue).catch((e) => {
+      console.error("Photo", e);
+      alerte("La photo n'a pas pu être lue.", 3500);
+    });
+  };
+  champ.click();
+}
+
+async function rangerPhoto(fichier: File, vue: Vue) {
+  vue.f35 = focale35(await fichier.slice(0, 256 * 1024).arrayBuffer()) ?? FOCALE_DEFAUT;
+  // L'orientation EXIF est appliquée au décodage (photo prise en portrait ou en paysage).
+  const bitmap = await createImageBitmap(fichier, { imageOrientation: "from-image" } as ImageBitmapOptions);
+  const grande = reduire(bitmap, PHOTO_MAX);
+  bitmap.close();
+  const [image, petite] = await Promise.all([versBlob(grande, 0.85), versBlob(reduire(grande, VIGNETTE), 0.8)]);
+  const cap: Capture = {
+    id: crypto.randomUUID(),
+    genre: "photo",
+    auteur_nom: monPrenom(),
+    cree_le: new Date().toISOString(),
+    message: "",
+    statut: "a_traiter",
+    vue,
+    largeur: grande.width,
+    hauteur: grande.height,
+    locale: !projet,
+  };
+  images.set(cap.id, URL.createObjectURL(image));
+  vignettes.set(cap.id, URL.createObjectURL(petite));
+  captures.unshift(cap);
+  majCoin();
+  notifier(cap);
+  if (projet) void envoyer(cap, image, petite);
+}
+
+// Icônes dans la maquette : une petite pyramide (champ de vision) qui pointe dans la
+// direction de la prise de vue, visible à travers les murs, grossie avec la distance.
+const CLE_ICONES = "nexbim-icones-photos";
+let iconesVisibles = true;
+try {
+  iconesVisibles = localStorage.getItem(CLE_ICONES) !== "0";
+} catch {
+  // Affichées par défaut.
+}
+const groupeIcones = new THREE.Group();
+groupeIcones.name = "photos-situees";
+monde.scene.three.add(groupeIcones);
+const matTrait = new THREE.LineBasicMaterial({ color: 0xff8a1f, depthTest: false, transparent: true });
+const matFond = new THREE.MeshBasicMaterial({ color: 0xff8a1f, depthTest: false, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
+const matCible = new THREE.MeshBasicMaterial({ visible: false });
+const geoTraits = (() => {
+  // Sommet à l'origine, base rectangulaire vers +Z (lookAt oriente +Z vers la cible).
+  const L = 0.16;
+  const H = 0.12;
+  const P = 0.32;
+  const coins = [
+    [-L, -H, P],
+    [L, -H, P],
+    [L, H, P],
+    [-L, H, P],
+  ];
+  const pts: number[] = [];
+  for (const c of coins) pts.push(0, 0, 0, ...c);
+  for (let i = 0; i < 4; i++) pts.push(...coins[i], ...coins[(i + 1) % 4]);
+  // Petit repère « haut » au-dessus de la base.
+  pts.push(-L * 0.4, H, P, 0, H * 1.6, P, 0, H * 1.6, P, L * 0.4, H, P);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+  return g;
+})();
+const geoFond = new THREE.PlaneGeometry(0.32, 0.24).translate(0, 0, 0.32);
+const geoCible = new THREE.SphereGeometry(0.28, 8, 6).translate(0, 0, 0.16);
+
+function majIcones() {
+  for (const o of [...groupeIcones.children]) groupeIcones.remove(o);
+  if (!iconesVisibles) return void rafraichir();
+  for (const c of captures) {
+    if (c.genre !== "photo" || !c.vue) continue;
+    const icone = new THREE.Group();
+    const traits = new THREE.LineSegments(geoTraits, matTrait);
+    const fond = new THREE.Mesh(geoFond, matFond);
+    const cible = new THREE.Mesh(geoCible, matCible);
+    for (const m of [traits, fond]) m.renderOrder = 998;
+    icone.add(traits, fond, cible);
+    icone.position.fromArray(c.vue.p);
+    icone.lookAt(new THREE.Vector3().fromArray(c.vue.c));
+    icone.userData.capture = c.id;
+    groupeIcones.add(icone);
+  }
+  void rafraichir();
+}
+
+monde.renderer!.onBeforeUpdate.add(() => {
+  if (!groupeIcones.children.length) return;
+  const cam = monde.camera.three.position;
+  for (const o of groupeIcones.children) {
+    // Assez grande pour être vue et touchée de loin, discrète de près.
+    o.scale.setScalar(THREE.MathUtils.clamp(cam.distanceTo(o.position) / 5, 1, 40));
+  }
+});
+
+// Toucher une icône : la photo s'ouvre à son point de vue (avant la fiche des éléments).
+{
+  const toile = monde.renderer!.three.domElement;
+  let depart: { x: number; y: number; id: number } | null = null;
+  const iconeSous = (x: number, y: number) => {
+    if (!groupeIcones.children.length || !iconesVisibles || modeClicActif() || photoOuverte) return null;
+    const r = toile.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+    const rayon = new THREE.Raycaster();
+    rayon.params.Line = { threshold: 0.05 };
+    monde.camera.three.updateMatrixWorld();
+    rayon.setFromCamera(ndc, monde.camera.three);
+    groupeIcones.updateMatrixWorld(true);
+    const touche = rayon.intersectObjects(groupeIcones.children, true)[0];
+    let o: THREE.Object3D | null = touche?.object ?? null;
+    while (o && !o.userData.capture) o = o.parent;
+    return o ? captures.find((c) => c.id === o!.userData.capture) ?? null : null;
+  };
+  // Le doigt posé sur une icône ne va ni à la caméra ni à la fiche : sinon la caméra
+  // choisissait ce point comme pivot (après coup) et dérangeait le déplacement vers la photo.
+  let touchee: Capture | null = null;
+  toile.addEventListener(
+    "pointerdown",
+    (e) => {
+      touchee = null;
+      const c = iconeSous(e.clientX, e.clientY);
+      if (!c) return;
+      touchee = c;
+      depart = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    },
+    { capture: true },
+  );
+  toile.addEventListener(
+    "pointerup",
+    (e) => {
+      const d = depart;
+      const c = touchee;
+      depart = null;
+      touchee = null;
+      if (!c || !d || d.id !== e.pointerId) return;
+      e.stopImmediatePropagation();
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 12) return;
+      void voirPhoto(c);
+    },
+    { capture: true },
+  );
+}
+
+// Visionneuse : caméra au point de vue de la photo, angle de vue de l'appareil, photo
+// par-dessus la maquette avec un curseur pour passer de l'une à l'autre.
+let photoOuverte = false;
+
+async function voirPhoto(c: Capture) {
+  if (!c.vue || photoOuverte) return;
+  fermerGalerie();
+  photoOuverte = true;
+  const ctl = monde.camera.controls;
+  const persp = monde.camera.threePersp;
+  const avant = {
+    p: ctl.getPosition(new THREE.Vector3()),
+    t: ctl.getTarget(new THREE.Vector3()),
+    fov: persp.fov,
+    ortho: estOrtho(),
+  };
+  const enVisite = visiteActive();
+  // Son icône, vue de l'intérieur, rayerait l'image.
+  const sonIcone = groupeIcones.children.find((o) => o.userData.capture === c.id);
+  if (sonIcone) sonIcone.visible = false;
+  suspendreVisite(true);
+  bloquerDecalage(true);
+  if (avant.ortho) await definirProjection("Perspective");
+
+  const ecran = cree("div", "photo-vue");
+  const img = cree("img", "photo-vue-img");
+  img.alt = "Photo du chantier";
+  img.src = vignettes.get(c.id) ?? "";
+  const barre = cree("div", "photo-vue-barre");
+  const curseur = cree("input", "photo-vue-curseur");
+  curseur.type = "range";
+  curseur.min = "0";
+  curseur.max = "100";
+  curseur.value = "85";
+  curseur.setAttribute("aria-label", "Photo ou maquette");
+  const appliquerOpacite = () => (img.style.opacity = String(Number(curseur.value) / 100));
+  curseur.addEventListener("input", appliquerOpacite);
+  appliquerOpacite();
+  const etiquette = cree("span", "photo-vue-legende", `${dateCourte(c.cree_le)}${c.auteur_nom ? " · " + c.auteur_nom : ""}${c.message ? " · " + c.message : ""}`);
+  const curseurBloc = cree("label", "photo-vue-mixage");
+  curseurBloc.append(cree("span", "", "Maquette"), curseur, cree("span", "", "Photo"));
+  barre.append(
+    bouton("visite-puce", "✕ Fermer", () => void fermer()),
+    curseurBloc,
+    bouton("visite-puce", "Détails", () => {
+      void fermer().then(() => ouvrirGalerie(c.id));
+    }),
+  );
+  ecran.append(img, etiquette, barre);
+  document.body.append(ecran);
+  void imageDe(c).then((u) => u && (img.src = u));
+
+  // Angle de vue : celui de l'appareil, ajusté pour que la photo (affichée en entier)
+  // recouvre exactement la maquette.
+  const regler = () => {
+    const taille = monde.renderer!.getSize();
+    const pw = c.largeur || 4;
+    const ph = c.hauteur || 3;
+    const tanDiag = 43.27 / (2 * (c.vue!.f35 ?? FOCALE_DEFAUT));
+    const tanV = (tanDiag * ph) / Math.hypot(pw, ph);
+    const echelle = Math.min(taille.x / pw, taille.y / ph);
+    const tanEcran = tanV * (taille.y / (ph * echelle));
+    persp.fov = THREE.MathUtils.radToDeg(2 * Math.atan(tanEcran));
+    persp.updateProjectionMatrix();
+    void rafraichir();
+  };
+  regler();
+  window.addEventListener("resize", regler);
+  const [px, py, pz] = c.vue.p;
+  const [cx, cy, cz] = c.vue.c;
+  recentrerPivot();
+  await ctl.setLookAt(px, py, pz, cx, cy, cz, true);
+
+  async function fermer() {
+    if (!photoOuverte) return;
+    photoOuverte = false;
+    window.removeEventListener("resize", regler);
+    ecran.remove();
+    if (sonIcone) sonIcone.visible = true;
+    persp.fov = avant.fov;
+    persp.updateProjectionMatrix();
+    if (enVisite && visiteActive()) {
+      // En visite, on reste au point de vue de la photo et la marche reprend de là.
+      ctl.update(0);
+      suspendreVisite(false);
+    } else {
+      if (avant.ortho) await definirProjection("Orthographic");
+      await ctl.setLookAt(avant.p.x, avant.p.y, avant.p.z, avant.t.x, avant.t.y, avant.t.z, true);
+      bloquerDecalage(false);
+      ajusterDecalage(false);
+    }
+    void rafraichir();
+  }
 }
 
 // --- Bouton -------------------------------------------------------------------------------

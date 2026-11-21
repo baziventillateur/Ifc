@@ -16,6 +16,7 @@ import { angleDeVisite, bloquerUnDoigt, definirOeil, definirRegardExterne, defin
 import { estAdmin, hauteurTelephone } from "./nuage/projets";
 import { replierCalques } from "./maquettes";
 import { activerAvancement } from "./avancement";
+import { prendrePhoto } from "./captures";
 import { inviterPleinEcran, pleinEcranModifie } from "./plein-ecran";
 import {
   arActif,
@@ -288,9 +289,11 @@ manette.addEventListener("pointercancel", lacher);
 // Boucle d'animation : manette et suivi GPS.
 let boucle = 0;
 let dernier = 0;
+/** Une photo est affichée à son point de vue : la marche (manette, capteurs) attend. */
+let suspendu = false;
 function avancer(t: number) {
   boucle = 0;
-  if (!actif || etape !== "marche") return;
+  if (!actif || etape !== "marche" || suspendu) return;
   const dt = Math.min(0.1, (t - dernier) / 1000);
   dernier = t;
   let encore = false;
@@ -620,7 +623,7 @@ function suivreNiveau(sol: number) {
 }
 
 function surImageAR(l: Pose) {
-  if (!actif || !ancre) return;
+  if (!actif || !ancre || suspendu) return;
   if (l.perdu !== arPerdu) {
     arPerdu = l.perdu;
     if (etape === "marche") dessiner();
@@ -1106,7 +1109,11 @@ function dessiner() {
           );
         }
       }
-      actions.append(niveauBtn, puce("Plan", () => void versPlan("place"), "", "Revenir au plan pour vous replacer"));
+      actions.append(
+        puce("📷 Photo", () => void prendrePhoto(), "", "Photo du chantier, rangée à cet endroit de la maquette"),
+        niveauBtn,
+        puce("Plan", () => void versPlan("place"), "", "Revenir au plan pour vous replacer"),
+      );
       manette.hidden = suiviGps || ar || !tactile();
       void garderEcran(suiviGps || ar || gyro);
       break;
@@ -1256,6 +1263,17 @@ btnVisite.addEventListener("click", () => void (actif ? quitter() : demarrer()))
 /** Pour les autres outils (captures : revenir à un point de vue). */
 export const visiteActive = () => actif;
 export const quitterVisite = () => quitter();
+
+/** Photo affichée à son point de vue : la visite se met en pause, puis repart d'où l'on est. */
+export function suspendreVisite(oui: boolean) {
+  if (!actif || suspendu === oui) return;
+  suspendu = oui;
+  manette.hidden = oui || suiviGps || arActif() || !tactile() || etape !== "marche";
+  if (oui) return;
+  // Les capteurs repartent de la vue actuelle.
+  if (arActif() || gyroActif()) ancrer();
+  relancer();
+}
 window.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !actif) return;
   const cible = e.target as HTMLElement | null;

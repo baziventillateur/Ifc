@@ -3866,3 +3866,91 @@ body.paysage.menu-visible .poignee-menu {
   border: 1px solid var(--bord);
   border-top: 0;
 }
+
+/* --- Photos situées --------------------------------------------------------------- */
+
+.captures-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.capture-carte {
+  position: relative;
+}
+
+.capture-genre {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(13, 17, 22, 0.8);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.photo-vue {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+}
+
+.photo-vue-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transition: opacity 0.1s;
+}
+
+.photo-vue-legende {
+  position: absolute;
+  left: 50%;
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  max-width: calc(100vw - 24px);
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: rgba(13, 17, 22, 0.75);
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.photo-vue-barre {
+  position: absolute;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(520px, calc(100vw - 16px));
+  padding: 6px 8px;
+  border: 1px solid var(--bord);
+  border-radius: 12px;
+  background: rgba(22, 27, 34, 0.94);
+  pointer-events: auto;
+}
+
+.photo-vue-mixage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--doux);
+  font-size: 11px;
+}
+
+.photo-vue-curseur {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}

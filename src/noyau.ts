@@ -438,12 +438,15 @@ export function definirVueFixe(oui: boolean) {
 /**
  * Bascule de projection en visite : la bibliothèque reculait la caméra de 200 m en passant
  * en orthogonale (on voyait la façade au lieu de la pièce). On la remet à l'œil, et la vue
- * orthogonale montre une « élévation » depuis l'endroit où l'on est (environ 5 m de large).
+ * orthogonale est une coupe verticale à l'endroit où l'on est, face à soi (environ 5 m de
+ * large) : le regard reste horizontal, sinon plafond et sol, vus de biais, remplissaient
+ * l'écran.
  */
 async function basculerSurPlace(vers: "Perspective" | "Orthographic") {
   const c = monde.camera.controls;
   const p = c.getPosition(new THREE.Vector3());
   const d = c.getTarget(new THREE.Vector3()).sub(p).normalize();
+  if (vers === "Orthographic" && Math.hypot(d.x, d.z) > 1e-3) d.setY(0).normalize();
   bascule = monde.camera.projection.set(vers).finally(() => (bascule = null));
   await bascule;
   const t = p.clone().addScaledVector(d, 3);
@@ -453,6 +456,7 @@ async function basculerSurPlace(vers: "Perspective" | "Orthographic") {
     const taille = monde.renderer!.getSize();
     const hauteur = Math.max(4, (5 * taille.y) / Math.max(1, taille.x));
     await c.zoomTo((o.top - o.bottom) / hauteur, false);
+    alerte("Vue orthogonale : coupe verticale à l'endroit où vous êtes, face à vous.", 3500);
   }
   c.update(0);
 }

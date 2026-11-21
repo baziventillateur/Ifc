@@ -552,7 +552,8 @@ function viserDepuis(pos: THREE.Vector3, devant: THREE.Vector3) {
   // Jamais tout à fait à la verticale : la caméra ne saurait plus où est le haut.
   const plat = Math.hypot(d.x, d.z);
   if (plat < 1e-3) return;
-  d.y = THREE.MathUtils.clamp(d.y, -0.97, 0.97);
+  // Vue orthogonale : coupe verticale, regard horizontal (seul le cap du téléphone compte).
+  d.y = estOrtho() ? 0 : THREE.MathUtils.clamp(d.y, -0.97, 0.97);
   const k = Math.sqrt(1 - d.y * d.y) / plat;
   d.x *= k;
   d.z *= k;

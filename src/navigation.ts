@@ -140,7 +140,10 @@ function tournerTete(lacet: number, tangage: number) {
   const longueur = Math.max(controles.minDistance, 0.5, versCible.length());
   const s = new THREE.Spherical().setFromVector3(versCible);
   s.theta -= THREE.MathUtils.degToRad(lacet);
-  s.phi = THREE.MathUtils.clamp(s.phi + THREE.MathUtils.degToRad(tangage), 0.06, Math.PI - 0.06);
+  // En visite orthogonale (coupe verticale), le regard reste horizontal.
+  s.phi = visite && estOrtho()
+    ? Math.PI / 2
+    : THREE.MathUtils.clamp(s.phi + THREE.MathUtils.degToRad(tangage), 0.06, Math.PI - 0.06);
   s.radius = longueur;
   const nouvelle = new THREE.Vector3().setFromSpherical(s).add(position);
   void controles.setLookAt(position.x, position.y, position.z, nouvelle.x, nouvelle.y, nouvelle.z, false);

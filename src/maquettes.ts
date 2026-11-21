@@ -91,7 +91,8 @@ selectionModifiee.on(marquerChoisies);
 function dessinerCalques() {
   const liste = [...maquettes.values()];
   calques.hidden = liste.length === 0;
-  calquesTitre.textContent = `Maquettes · ${liste.length}`;
+  // Repliée, la barre se range contre le bord gauche : on n'y voit plus que le nombre.
+  calquesTitre.innerHTML = `<span class="calques-mot">Maquettes · </span>${liste.length}`;
   calquesListe.replaceChildren();
   for (const m of liste) {
     const rang = cree("div", "calque");
@@ -199,10 +200,15 @@ function dessinerCalques() {
 
 changement.on(dessinerCalques);
 
-calquesEntete.addEventListener("click", () => {
-  const replie = calques.classList.toggle("replie");
-  calquesEntete.setAttribute("aria-expanded", String(!replie));
-});
+calquesEntete.addEventListener("click", () => replierCalques(!calques.classList.contains("replie")));
+
+/** Replie (ou déplie) la liste des maquettes ; renvoie l'état d'avant. */
+export function replierCalques(oui: boolean) {
+  const avant = calques.classList.contains("replie");
+  calques.classList.toggle("replie", oui);
+  calquesEntete.setAttribute("aria-expanded", String(!oui));
+  return avant;
+}
 
 btnCouleurs.addEventListener("click", () => {
   enregistrer(reglages.couleurs ? "couleurs éteintes" : "couleurs allumées", () => {

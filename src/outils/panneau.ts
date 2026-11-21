@@ -13,6 +13,17 @@ let actif: string | null = null;
 
 el("outil-fermer").addEventListener("click", () => fermerOutil());
 
+// Replier le panneau : il ne reste que sa barre de titre, la vue est dégagée.
+const btnReplier = el("outil-replier");
+function replier(oui: boolean) {
+  panneau.classList.toggle("replie", oui);
+  btnReplier.setAttribute("aria-expanded", String(!oui));
+  btnReplier.setAttribute("aria-label", oui ? "Déplier le panneau" : "Replier le panneau");
+  requestAnimationFrame(() => ajusterDecalage());
+}
+btnReplier.addEventListener("click", () => replier(!panneau.classList.contains("replie")));
+titre.addEventListener("click", () => replier(!panneau.classList.contains("replie")));
+
 // Fondu à droite quand la barre d'outils déborde (téléphone).
 const majDebord = () =>
   barre.classList.toggle("deborde", barre.scrollLeft + barre.clientWidth < barre.scrollWidth - 4);
@@ -53,6 +64,7 @@ export function ouvrirOutil(id: string) {
   if (!o) return;
   actif = id;
   titre.textContent = o.titre;
+  replier(false);
   o.section.hidden = false;
   o.bouton.classList.add("actif");
   o.bouton.scrollIntoView({ inline: "nearest", block: "nearest" });

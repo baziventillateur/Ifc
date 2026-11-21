@@ -52,7 +52,7 @@ type Personne = { utilisateur_id: string | null; email: string; prenom: string; 
 type ProjetAutre = Projet & { titulaire: string; maquettes: number };
 
 const etat = {
-  moi: { id: "", email: "", prenom: "" },
+  moi: { id: "", email: "", prenom: "", taille: null as number | null },
   admin: false,
   projets: [] as Projet[],
   /** Administrateur : projets des autres comptes, chargés à la demande (« + »). */
@@ -330,14 +330,21 @@ async function mettreANiveau(f: Fichier, ifc?: File) {
 /** Administrateur connecté (fonctions en essai, réservées pour l'instant). */
 export const estAdmin = () => etat.admin;
 
+/**
+ * Hauteur de la vue en visite à la première personne : celle du téléphone tenu en main,
+ * vers les épaules (taille − 30 cm). Sans taille renseignée : 1,40 m.
+ */
+export const hauteurTelephone = () => (etat.moi.taille ? etat.moi.taille / 100 - 0.3 : 1.4);
+
 export async function demarrerNuage(utilisateur: User) {
   etat.moi.id = utilisateur.id;
   etat.moi.email = utilisateur.email ?? "";
   const [{ data: profil }, { data: admin }] = await Promise.all([
-    nuage.from("profils").select("prenom").eq("id", utilisateur.id).maybeSingle(),
+    nuage.from("profils").select("prenom, taille_cm").eq("id", utilisateur.id).maybeSingle(),
     nuage.rpc("suis_je_admin"),
   ]);
   etat.moi.prenom = profil?.prenom ?? "";
+  etat.moi.taille = typeof profil?.taille_cm === "number" ? profil.taille_cm : null;
   etat.admin = admin === true;
   majCompte();
   await chargerProjets();
@@ -866,6 +873,7 @@ const ICONES_MENU = {
   admin: SVG('<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.3 7.5 9.5 4.3-1.2 7.5-4.9 7.5-9.5V6L12 3Z"/>'),
   projets: SVG('<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2.2h8.8A1.5 1.5 0 0 1 21 9.7v8.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5Z"/>'),
   versions: SVG('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'),
+  taille: SVG('<circle cx="9" cy="4.5" r="2"/><path d="M9 8v6m0 0-2.5 6M9 14l2.5 6M5.5 10.5h7"/><path d="M18 3v18M16.5 4.5h3M16.5 19.5h3"/>'),
   applis: SVG('<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>'),
   sortie: SVG('<path d="M15 4h3.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H15"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/>'),
 };
@@ -925,6 +933,12 @@ function ouvrirMenuCompte() {
   if (etat.admin) item("admin", ICONES_MENU.admin, "Panneau admin", () => void ouvrirAdmin());
   item("", ICONES_MENU.projets, "Mes projets", () => ouvrirPanneau());
   item("", ICONES_MENU.versions, "Versions et mises à jour", () => ouvrirVersions());
+  item(
+    "",
+    ICONES_MENU.taille,
+    etat.moi.taille ? `Ma taille · ${(etat.moi.taille / 100).toFixed(2).replace(".", ",")} m` : "Ma taille (visite)",
+    ouvrirTaille,
+  );
   item("", ICONES_MENU.applis, "Autres applications PaceApp", ouvrirAutresApplis);
   menu.append(cree("div", "menu-compte-sep"));
   item("danger", ICONES_MENU.sortie, "Se déconnecter", () => {
@@ -939,6 +953,43 @@ function ouvrirMenuCompte() {
   btnCompte.setAttribute("aria-expanded", "true");
   window.addEventListener("pointerdown", dehorsMenuCompte, true);
   window.addEventListener("keydown", toucheMenuCompte, true);
+}
+
+/** Taille de la personne : place la vue à hauteur du téléphone dans la visite. */
+function ouvrirTaille() {
+  const corps = ouvrirFenetre("Ma taille");
+  corps.append(
+    cree(
+      "p",
+      "modale-aide",
+      "En visite à la première personne, la vue se place à la hauteur du téléphone tenu en main : votre taille moins 30 cm. Sans taille : 1,40 m.",
+    ),
+  );
+  const f = formulaire("Taille en cm, ex. 175", "Enregistrer", "number", async (v) => {
+    const cm = Math.round(Number(v));
+    if (!(cm >= 100 && cm <= 230)) return "Indiquez une taille entre 100 et 230 cm.";
+    const { error } = await nuage.from("profils").update({ taille_cm: cm }).eq("id", etat.moi.id);
+    if (error) throw error;
+    etat.moi.taille = cm;
+    fermer();
+    alerte(`Taille enregistrée : la vue de la visite sera à ${hauteurTelephone().toFixed(2).replace(".", ",")} m.`, 4000);
+  });
+  const champ = f.querySelector("input")!;
+  champ.min = "100";
+  champ.max = "230";
+  champ.inputMode = "numeric";
+  if (etat.moi.taille) champ.value = String(etat.moi.taille);
+  corps.append(f);
+  if (etat.moi.taille) {
+    corps.append(
+      bouton("lien", "Revenir à 1,40 m (sans taille)", async () => {
+        const { error } = await nuage.from("profils").update({ taille_cm: null }).eq("id", etat.moi.id);
+        if (error) return alerte("L'enregistrement a échoué. Réessayez.");
+        etat.moi.taille = null;
+        fermer();
+      }),
+    );
+  }
 }
 
 function ouvrirAutresApplis() {

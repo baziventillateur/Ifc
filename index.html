@@ -68,7 +68,8 @@
 
     <div class="colonne">
       <section class="calques" id="calques" hidden>
-        <button class="calques-entete" id="calques-entete" type="button" aria-expanded="true">
+        <button class="calques-entete" id="calques-entete" type="button" aria-expanded="true" title="Replier ou déplier la liste des maquettes">
+          <svg class="calques-icone" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
           <span id="calques-titre">Maquettes</span>
           <span class="chevron" aria-hidden="true">▾</span>
         </button>
@@ -86,6 +87,7 @@
       <section class="outil" id="outil" hidden aria-live="polite">
         <div class="outil-entete">
           <span id="outil-titre"></span>
+          <button class="replier" id="outil-replier" type="button" aria-label="Replier le panneau" aria-expanded="true">▾</button>
           <button class="fermer" id="outil-fermer" type="button" aria-label="Fermer l'outil">✕</button>
         </div>
         <div class="outil-corps" id="outil-corps"></div>

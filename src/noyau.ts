@@ -429,9 +429,38 @@ export function estOrtho() {
 
 let rayonAvantOrtho = 0;
 
+let vueFixe = false;
+/** Visite à la première personne : la caméra reste à l'œil quand on change de projection. */
+export function definirVueFixe(oui: boolean) {
+  vueFixe = oui;
+}
+
+/**
+ * Bascule de projection en visite : la bibliothèque reculait la caméra de 200 m en passant
+ * en orthogonale (on voyait la façade au lieu de la pièce). On la remet à l'œil, et la vue
+ * orthogonale montre une « élévation » depuis l'endroit où l'on est (environ 5 m de large).
+ */
+async function basculerSurPlace(vers: "Perspective" | "Orthographic") {
+  const c = monde.camera.controls;
+  const p = c.getPosition(new THREE.Vector3());
+  const d = c.getTarget(new THREE.Vector3()).sub(p).normalize();
+  bascule = monde.camera.projection.set(vers).finally(() => (bascule = null));
+  await bascule;
+  const t = p.clone().addScaledVector(d, 3);
+  await c.setLookAt(p.x, p.y, p.z, t.x, t.y, t.z, false);
+  if (vers === "Orthographic") {
+    const o = monde.camera.threeOrtho;
+    const taille = monde.renderer!.getSize();
+    const hauteur = Math.max(4, (5 * taille.y) / Math.max(1, taille.x));
+    await c.zoomTo((o.top - o.bottom) / hauteur, false);
+  }
+  c.update(0);
+}
+
 export async function definirProjection(vers: "Perspective" | "Orthographic") {
   if (bascule) await bascule;
   if (monde.camera.projection.current === vers) return;
+  if (vueFixe) return basculerSurPlace(vers);
   recentrerPivot();
   const c = monde.camera.controls;
   // Retour en perspective : la caméra reste où elle est. La bibliothèque la replaçait

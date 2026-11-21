@@ -10,6 +10,7 @@ import {
   bouton,
   cree,
   definirProjection,
+  definirVueFixe,
   estOrtho,
   fragments,
   lanceur,
@@ -41,8 +42,10 @@ function reglerBoutons() {
   controles.mouseButtons.left = (regarder ? ACTION.NONE : ACTION.ROTATE) as never;
   controles.touches.one = (regarder ? ACTION.NONE : ACTION.TOUCH_ROTATE) as never;
   if (visite) {
-    controles.mouseButtons.wheel = ACTION.NONE as never;
-    controles.touches.two = ACTION.NONE as never;
+    // En visite orthogonale, la molette et le pincement agrandissent la vue sans bouger l'œil.
+    const ortho = monde.camera.projection.current === "Orthographic";
+    controles.mouseButtons.wheel = (ortho ? ACTION.ZOOM : ACTION.NONE) as never;
+    controles.touches.two = (ortho ? ACTION.TOUCH_ZOOM : ACTION.NONE) as never;
     controles.touches.three = ACTION.NONE as never;
   }
 }
@@ -199,26 +202,36 @@ window.addEventListener("pointercancel", (e) => {
 // --- Projection : un bouton rond à côté de l'œil ---------------------------------------
 // Toucher : bascule entre la vue orthogonale (sans perspective) et la perspective.
 // Appui long : deux angles de vue, normal (60°) et large (100°, pour les intérieurs) ;
-// on glisse le doigt sur la valeur et on le lève, ou on la touche ensuite.
-// L'angle choisi est gardé sur l'appareil.
+// en visite à la première personne : 100°, 120° et 150°.
+// On glisse le doigt sur la valeur et on le lève, ou on la touche ensuite.
+// Les angles choisis sont gardés sur l'appareil.
 const ANGLES = [60, 100];
+const ANGLES_VISITE = [100, 120, 150];
 const CLE_ANGLE = "nexbim-angle";
+const CLE_ANGLE_VISITE = "nexbim-angle-visite";
+const plusProche = (liste: number[], v: number) =>
+  liste.reduce((m, a) => (Math.abs(a - v) < Math.abs(m - v) ? a : m));
 let angle = 60;
+let angleVisite = 100;
 try {
   // Un ancien réglage (85°, 120°…) prend l'angle proposé le plus proche.
   const lu = Number(localStorage.getItem(CLE_ANGLE));
-  if (lu > 0) angle = ANGLES.reduce((m, a) => (Math.abs(a - lu) < Math.abs(m - lu) ? a : m));
+  if (lu > 0) angle = plusProche(ANGLES, lu);
+  const luVisite = Number(localStorage.getItem(CLE_ANGLE_VISITE));
+  if (luVisite > 0) angleVisite = plusProche(ANGLES_VISITE, luVisite);
 } catch {
-  // Angle normal.
+  // Angles par défaut.
 }
+const angles = () => (visite ? ANGLES_VISITE : ANGLES);
+const angleActuel = () => (visite ? angleVisite : angle);
 const btnProjection = document.getElementById("btn-projection");
 const ICONE_ORTHO =
   '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4v15h15"/><path d="M5 13h6v6"/></svg>';
 
 function appliquerAngle() {
   const cam = monde.camera.threePersp;
-  if (cam.fov === angle) return;
-  cam.fov = angle;
+  if (cam.fov === angleActuel()) return;
+  cam.fov = angleActuel();
   cam.updateProjectionMatrix();
   void fragments.core.update(true);
 }
@@ -227,18 +240,19 @@ function majBoutonProjection() {
   if (!btnProjection) return;
   const ortho = estOrtho();
   btnProjection.classList.toggle("actif", ortho);
-  btnProjection.innerHTML = ortho ? ICONE_ORTHO : `<span>${angle}°</span>`;
+  btnProjection.innerHTML = ortho ? ICONE_ORTHO : `<span>${angleActuel()}°</span>`;
   btnProjection.title = ortho
     ? "Vue orthogonale (sans perspective). Toucher : perspective. Appui long : angle de vue."
-    : `Perspective ${angle}°. Toucher : vue orthogonale. Appui long : changer l'angle.`;
+    : `Perspective ${angleActuel()}°. Toucher : vue orthogonale. Appui long : changer l'angle.`;
 }
 
 const basculerProjection = () => void definirProjection(estOrtho() ? "Perspective" : "Orthographic");
 
 function choisirAngle(a: number) {
-  angle = a;
+  if (visite) angleVisite = a;
+  else angle = a;
   try {
-    localStorage.setItem(CLE_ANGLE, String(a));
+    localStorage.setItem(visite ? CLE_ANGLE_VISITE : CLE_ANGLE, String(a));
   } catch {
     // Gardé pour la session seulement.
   }
@@ -272,8 +286,8 @@ function ouvrirAngles() {
   });
   ortho.innerHTML = `${ICONE_ORTHO}<span>Ortho</span>`;
   liste.append(ortho);
-  for (const a of ANGLES) {
-    const b = bouton("choix-angle-option" + (!estOrtho() && a === angle ? " actif" : ""), `${a}°`, () => {
+  for (const a of angles()) {
+    const b = bouton("choix-angle-option" + (!estOrtho() && a === angleActuel() ? " actif" : ""), `${a}°`, () => {
       fermerAngles();
       choisirAngle(a);
     });
@@ -372,6 +386,7 @@ btnOeil?.addEventListener("click", () => definirOeil(!oeil));
 /** Entrée et sortie de la visite : la molette et les deux doigts reprennent leur rôle à la sortie. */
 export function definirVisite(actif: boolean) {
   visite = actif;
+  definirVueFixe(actif);
   finRegard();
   if (!actif) {
     const ortho = monde.camera.projection.current === "Orthographic";
@@ -381,6 +396,9 @@ export function definirVisite(actif: boolean) {
     controles.touches.three = pincer;
   }
   reglerBoutons();
+  // La visite a ses propres angles de vue (plus larges).
+  appliquerAngle();
+  majBoutonProjection();
 }
 
 // --- Flèches du clavier : marcher dans la maquette ----------------------------------------

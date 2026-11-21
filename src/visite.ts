@@ -11,7 +11,8 @@ import * as THREE from "three";
 import { ajusterDecalage, alerte, bloquerDecalage, bouton, cree, definirProjection, el, estOrtho, monde, rafraichir } from "./noyau";
 import { definirModeClic } from "./fiche";
 import { definirOeil, definirRegardExterne, definirVisite, modeOeil } from "./navigation";
-import { estAdmin } from "./nuage/projets";
+import { estAdmin, hauteurTelephone } from "./nuage/projets";
+import { replierCalques } from "./maquettes";
 import {
   arActif,
   arPossible,
@@ -28,7 +29,8 @@ import {
 import { solsDesNiveaux, type Sol } from "./niveaux";
 import { maquettes, visibles } from "./registre";
 
-const YEUX = 1.6; // hauteur des yeux au-dessus du sol (m)
+/** Hauteur de la vue au-dessus du sol : celle du téléphone tenu en main (1,40 m, ou taille − 30 cm). */
+const yeux = () => hauteurTelephone();
 const COUPE_PLAN = 1.2; // hauteur de la coupe du plan au-dessus du sol (m)
 const MARCHE = 1.4; // allure à la manette (m/s), manette poussée à fond
 const CALAGE_MS = 5000; // durée de mesure GPS sur chaque point
@@ -45,6 +47,8 @@ let etape: Etape = "niveau";
 let niveaux: Sol[] = [];
 let niveau: Sol | null = null;
 let place: THREE.Vector3 | null = null;
+/** La liste des maquettes était-elle repliée avant la visite (elle l'est pendant). */
+let calquesReplies = false;
 /** Vue d'avant la visite, retrouvée en sortant. */
 let avant: { pos: THREE.Vector3; cible: THREE.Vector3; ortho: boolean; oeil: boolean } | null = null;
 
@@ -58,9 +62,34 @@ const fermer = bouton("visite-fermer", "✕", () => void quitter(), "Quitter la 
 const entete = cree("div", "visite-entete");
 const titre = cree("strong", "", "Visite");
 const etatGps = cree("span", "visite-gps");
-entete.append(titre, etatGps, fermer);
+// Replié : il ne reste que la ligne du titre, pour dégager la vue en marchant.
+const btnReplier = bouton("replier", "▾", () => replierPanneau(!panneau.classList.contains("replie")), "Replier le panneau");
+function replierPanneau(oui: boolean) {
+  panneau.classList.toggle("replie", oui);
+  btnReplier.setAttribute("aria-label", oui ? "Déplier le panneau" : "Replier le panneau");
+  btnReplier.setAttribute("aria-expanded", String(!oui));
+}
+titre.addEventListener("click", () => replierPanneau(!panneau.classList.contains("replie")));
+entete.append(titre, etatGps, btnReplier, fermer);
 panneau.append(entete, texte, actions);
 document.body.append(panneau);
+
+// La fiche d'un élément s'ouvre en bas (téléphone) ou à droite (ordinateur) : le panneau
+// de la visite et la manette se placent à côté au lieu de la recouvrir.
+const fiche = document.getElementById("fiche");
+function placerPanneau() {
+  const ouverte = !!fiche?.classList.contains("ouverte");
+  const enBas = window.innerWidth < 820;
+  const haut = ouverte && enBas ? Math.round(fiche!.getBoundingClientRect().height) : 0;
+  panneau.style.bottom = haut ? `${haut + 8}px` : "";
+  panneau.style.right = ouverte && !enBas ? "360px" : "";
+  manette.style.bottom = haut ? `${haut + 12}px` : "";
+}
+if (fiche) {
+  new MutationObserver(placerPanneau).observe(fiche, { attributes: true, attributeFilter: ["class"] });
+  new ResizeObserver(placerPanneau).observe(fiche);
+  window.addEventListener("resize", placerPanneau);
+}
 
 const puce = (libelle: string, action: () => void, classe = "", aide?: string) =>
   bouton("visite-puce" + (classe ? ` ${classe}` : ""), libelle, action, aide);
@@ -144,7 +173,7 @@ async function regarderDepuis(sol: THREE.Vector3, direction: THREE.Vector3) {
   const d = direction.clone().setY(0);
   if (d.lengthSq() < 1e-6) d.set(0, 0, -1);
   d.normalize();
-  const oeil = new THREE.Vector3(sol.x, niveau!.y + YEUX, sol.z);
+  const oeil = new THREE.Vector3(sol.x, niveau!.y + yeux(), sol.z);
   const cible = oeil.clone().addScaledVector(d, 3);
   await controles.setFocalOffset(0, 0, 0, false);
   await controles.setLookAt(oeil.x, oeil.y, oeil.z, cible.x, cible.y, cible.z, false);
@@ -181,7 +210,7 @@ function decaler(dx: number, dz: number) {
   }
   const position = controles.getPosition(new THREE.Vector3());
   const cible = controles.getTarget(new THREE.Vector3());
-  const dy = niveau.y + YEUX - position.y;
+  const dy = niveau.y + yeux() - position.y;
   position.x += dx;
   position.z += dz;
   position.y += dy;
@@ -562,7 +591,7 @@ function surImageAR(l: Pose) {
   derniere.xr.copy(l.pos);
   derniere.vue.copy(pos);
   derniere.ok = true;
-  suivreNiveau(pos.y - YEUX);
+  suivreNiveau(pos.y - yeux());
 }
 
 function majRegard() {
@@ -701,6 +730,8 @@ function listeNiveaux(action: (s: Sol) => void) {
 
 function dessiner() {
   panneau.classList.toggle("compact", etape === "marche" || etape === "ar");
+  // Hors de la marche, le panneau donne une consigne : on le déplie.
+  if (etape !== "marche") replierPanneau(false);
   actions.replaceChildren();
   titre.textContent = niveau && etape !== "niveau" ? `Visite · ${niveau.nom}` : "Visite";
   switch (etape) {
@@ -853,6 +884,7 @@ async function demarrer() {
     oeil: modeOeil(),
   };
   if (avant.oeil) definirOeil(false);
+  calquesReplies = replierCalques(true);
   etape = "niveau";
   niveau = null;
   place = null;
@@ -898,6 +930,8 @@ async function quitter() {
   monde.renderer!.setPlane(false, planCoupe);
   btnVisite.classList.remove("actif");
   btnVisite.setAttribute("aria-pressed", "false");
+  replierCalques(calquesReplies);
+  replierPanneau(false);
   const a = avant;
   avant = null;
   if (a) {

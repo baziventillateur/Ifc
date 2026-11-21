@@ -3148,3 +3148,98 @@ a.projet-ligne {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   pointer-events: none;
 }
+
+/* --- Panneaux repliables : il ne reste que la barre de titre ------------------------ */
+
+.replier {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--doux);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.replie > * > .replier,
+.replie > .replier {
+  transform: rotate(180deg);
+}
+
+.outil-entete #outil-titre {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.outil.replie .outil-corps {
+  display: none;
+}
+
+.outil.replie .outil-entete {
+  border-bottom: 0;
+}
+
+.visite-entete .replier {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  background: #232b35;
+  font-size: 11px;
+}
+
+.visite-entete strong {
+  cursor: pointer;
+}
+
+.visite-panneau.replie .visite-texte,
+.visite-panneau.replie .visite-actions {
+  display: none;
+}
+
+.visite-panneau.replie .visite-entete {
+  margin-bottom: 0;
+}
+
+.visite-panneau.replie {
+  padding-bottom: 6px;
+}
+
+/* --- Liste des maquettes repliée : un onglet contre le bord gauche ------------------ */
+
+.calques-icone {
+  display: none;
+  flex: none;
+}
+
+.calques.replie {
+  align-self: flex-start;
+  margin-left: -9px;
+  border-left: 0;
+  border-radius: 0 9px 9px 0;
+}
+
+.calques.replie .calques-entete {
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 6px 6px 6px 9px;
+}
+
+.calques.replie .calques-mot {
+  display: none;
+}
+
+.calques.replie .calques-icone {
+  display: block;
+}
+
+/* Téléphone : le panneau d'outil occupe le bas de l'écran, le numéro de version s'efface
+   (il recouvrait les boutons du panneau replié). */
+@media (max-width: 819px) {
+  body.outil-ouvert .version-etiquette {
+    display: none;
+  }
+}

@@ -1,0 +1,1 @@
+throw Error(`Could not resolve "potree-core" imported by "@thatopen/components-front". Is it installed?`);

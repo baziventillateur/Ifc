@@ -1,19 +1,22 @@
 // Visite à la première personne (bouton manette).
-// 1. On choisit un niveau ; la maquette s'affiche en plan, coupée à 1,20 m du sol.
-// 2. On touche l'endroit où l'on se trouve, puis la direction du regard.
-// 3. On marche dans la maquette à hauteur d'yeux : un doigt pour regarder autour de soi,
-//    la manette à l'écran (ou les flèches du clavier) pour avancer.
+// 1. On choisit un niveau (la maquette s'affiche en plan, coupée à 1,20 m du sol), ou on
+//    touche directement la maquette à l'endroit où l'on est.
+// 2. Sur le plan : on pose le doigt où l'on est ; en le faisant glisser, la flèche du
+//    repère s'oriente. On lâche : la vue plonge jusqu'à hauteur d'yeux (animation).
+// 3. On marche dans la maquette : un doigt pour regarder autour de soi, la manette à
+//    l'écran (ou les flèches du clavier) pour avancer.
 // GPS : après un calage sur deux points touchés sur le plan, la position réelle du
 // téléphone déplace la vue. Le calage est gardé sur l'appareil pour le jeu de maquettes.
 // Capteurs (admin pour l'instant, voir suivi.ts) : caméra AR pour suivre les pas au
 // centimètre, ou gyroscope pour orienter la vue en bougeant le téléphone.
 import * as THREE from "three";
 import { ajusterDecalage, alerte, bloquerDecalage, bouton, cree, definirProjection, el, estOrtho, monde, rafraichir } from "./noyau";
-import { definirModeClic } from "./fiche";
-import { definirOeil, definirRegardExterne, definirVisite, modeOeil } from "./navigation";
+import { definirModeClic, viser } from "./fiche";
+import { angleDeVisite, bloquerUnDoigt, definirOeil, definirRegardExterne, definirVisite, modeOeil } from "./navigation";
 import { estAdmin, hauteurTelephone } from "./nuage/projets";
 import { replierCalques } from "./maquettes";
 import { activerAvancement } from "./avancement";
+import { inviterPleinEcran } from "./plein-ecran";
 import {
   arActif,
   arPossible,
@@ -42,7 +45,7 @@ const canvas = monde.renderer!.three.domElement;
 const controles = monde.camera.controls;
 const btnVisite = el<HTMLButtonElement>("btn-visite");
 
-type Etape = "niveau" | "place" | "regard" | "marche" | "ar" | "gps1" | "gps2" | "recaler" | "mesure";
+type Etape = "niveau" | "place" | "marche" | "ar" | "gps1" | "gps2" | "recaler" | "mesure";
 let actif = false;
 let etape: Etape = "niveau";
 let niveaux: Sol[] = [];
@@ -117,9 +120,19 @@ const marqueur = new THREE.Group();
   monde.scene.three.add(marqueur);
 }
 
-function poserMarqueur(p: THREE.Vector3, direction?: THREE.Vector3) {
-  const cam = monde.camera.three as THREE.OrthographicCamera;
-  const hauteur = cam.isOrthographicCamera ? (cam.top - cam.bottom) / cam.zoom : 30;
+function opaciteMarqueur(o: number) {
+  marqueur.traverse((m) => {
+    const mat = (m as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+    if (mat) mat.opacity = o;
+  });
+}
+
+function poserMarqueur(p: THREE.Vector3, direction?: THREE.Vector3 | null) {
+  const cam = monde.camera.three as THREE.OrthographicCamera & THREE.PerspectiveCamera;
+  const hauteur = cam.isOrthographicCamera
+    ? (cam.top - cam.bottom) / cam.zoom
+    : 2 * cam.position.distanceTo(p) * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+  opaciteMarqueur(1);
   marqueur.scale.setScalar(Math.max(0.15, hauteur * 0.012));
   marqueur.position.set(p.x, p.y + 0.02, p.z);
   const fleche = marqueur.getObjectByName("fleche")!;
@@ -157,7 +170,7 @@ async function vueEnPlan(sol: Sol) {
 }
 
 /** Point du sol du niveau sous le doigt (le plan est coupé : on ne vise pas la maquette). */
-function pointAuSol(e: PointerEvent, y: number) {
+function pointAuSol(e: { clientX: number; clientY: number }, y: number) {
   const r = canvas.getBoundingClientRect();
   const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   const rayon = new THREE.Raycaster();
@@ -181,16 +194,21 @@ async function regarderDepuis(sol: THREE.Vector3, direction: THREE.Vector3) {
   controles.update(0);
 }
 
-async function entrerEnMarche(direction: THREE.Vector3) {
-  if (!place || !niveau) return;
-  monde.renderer!.setPlane(false, planCoupe);
-  marqueur.visible = false;
+async function entrerEnMarche(direction: THREE.Vector3, anime = true) {
+  if (!place || !niveau || enAnimation) return;
   definirModeClic(null);
+  bloquerUnDoigt(false);
   if (estOrtho()) await definirProjection("Perspective");
-  definirVisite(true);
   // À hauteur d'yeux, pas de décalage de mise en page quand la fiche s'ouvre.
   bloquerDecalage(true);
-  await regarderDepuis(place, direction);
+  const d = direction.clone().setY(0);
+  if (d.lengthSq() < 1e-6) d.set(0, 0, -1);
+  d.normalize();
+  if (anime) await plonger(new THREE.Vector3(place.x, niveau.y + yeux(), place.z), d);
+  monde.renderer!.setPlane(false, planCoupe);
+  marqueur.visible = false;
+  definirVisite(true);
+  await regarderDepuis(place, d);
   etape = "marche";
   manette.hidden = !tactile();
   // Suivi par capteurs : la pose du téléphone repart de ce point et de cette direction.
@@ -656,25 +674,237 @@ function arreterGyro() {
   dessiner();
 }
 
+// --- Se placer : toucher l'endroit, glisser pour orienter la flèche ---------------------
+// Sur le plan : on pose le doigt où l'on est (le repère apparaît), on glisse pour tourner
+// sa flèche, on lâche pour entrer. Un simple toucher entre avec la direction par défaut.
+// Sur la maquette en 3D (choix du niveau) : un toucher place directement (niveau trouvé
+// d'après la hauteur du point) ; un appui long puis glisser oriente la flèche.
+
+const SEUIL_PX = 10;
+const APPUI_LONG = 320;
+/** Direction par défaut : celle de la vue avant la visite, ou du regard avant de repasser en plan. */
+const capDefaut = new THREE.Vector3(0, 0, -1);
+type Geste = {
+  id: number;
+  x: number;
+  y: number;
+  plan: boolean;
+  p: THREE.Vector3 | null;
+  dir: THREE.Vector3 | null;
+  minuterie: number;
+  long: boolean;
+  /** Appui long : recherche du point touché dans la maquette (en cours ou finie). */
+  recherche: Promise<void> | null;
+  /** Dernière position du doigt (pour orienter dès que le point est trouvé). */
+  dernier: { clientX: number; clientY: number } | null;
+};
+let geste: Geste | null = null;
+const appuis = new Set<number>();
+
+function dirDefaut(p: THREE.Vector3) {
+  const d = capDefaut.clone().setY(0);
+  if (d.lengthSq() > 1e-6) return d.normalize();
+  // Vue de dessus avant la visite : on regarde vers le milieu du niveau.
+  const c = (niveau && !niveau.emprise.isEmpty() ? niveau.emprise : emprise()).getCenter(new THREE.Vector3());
+  const v = c.sub(p).setY(0);
+  return v.lengthSq() > 4 ? v.normalize() : new THREE.Vector3(0, 0, -1);
+}
+
+/** Niveau d'un point touché dans la maquette : le plus haut sol sous ce point. */
+function niveauSous(y: number) {
+  let n: Sol | null = null;
+  for (const s of niveaux) if (s.y <= y + 0.25) n = s;
+  return n ?? niveaux[0] ?? null;
+}
+
+/** Point touché dans la maquette en 3D → endroit où se tenir sur le sol de son niveau. */
+async function pointDansMaquette(x: number, y: number) {
+  const v = await viser({ clientX: x, clientY: y });
+  if (!v) return null;
+  const n = niveauSous(v.point.y);
+  if (!n) return null;
+  const p = v.point.clone();
+  // Un mur ou un meuble touché : on se place un peu devant, côté caméra.
+  if (p.y - n.y > 0.4) {
+    const recul = p.clone().sub(monde.camera.three.position).setY(0);
+    if (recul.lengthSq() > 1e-6) p.addScaledVector(recul.normalize(), -0.4);
+  }
+  p.y = n.y;
+  return { p, n };
+}
+
+function orienter(e: { clientX: number; clientY: number }, g = geste) {
+  if (!g) return;
+  g.dernier = { clientX: e.clientX, clientY: e.clientY };
+  if (!g.p) return;
+  if (Math.hypot(e.clientX - g.x, e.clientY - g.y) < SEUIL_PX) return;
+  const q = pointAuSol(e, g.p.y);
+  if (!q) return;
+  const d = q.sub(g.p).setY(0);
+  if (d.lengthSq() < 1e-4) return;
+  g.dir = d.normalize();
+  if (geste === g) poserMarqueur(g.p, g.dir);
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  appuis.add(e.pointerId);
+  if (!actif || enAnimation || (etape !== "place" && etape !== "niveau") || !niveaux.length) return;
+  if (appuis.size > 1) {
+    // Deux doigts : on déplace ou zoome la vue, pas de placement.
+    annulerGeste();
+    return;
+  }
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  if (etape === "place" && niveau) {
+    const p = pointAuSol(e, niveau.y);
+    if (!p) return;
+    geste = { id: e.pointerId, x: e.clientX, y: e.clientY, plan: true, p, dir: null, minuterie: 0, long: false, recherche: null, dernier: null };
+    poserMarqueur(p);
+    return;
+  }
+  // Maquette en 3D : appui long pour poser le repère et l'orienter.
+  const g: Geste = { id: e.pointerId, x: e.clientX, y: e.clientY, plan: false, p: null, dir: null, minuterie: 0, long: false, recherche: null, dernier: null };
+  g.minuterie = window.setTimeout(() => {
+    if (geste !== g) return;
+    // Doigt immobile : c'est un appui long, la vue ne tourne plus.
+    g.long = true;
+    controles.enabled = false;
+    navigator.vibrate?.(15);
+    g.recherche = pointDansMaquette(g.x, g.y).then((r) => {
+      if (!r) return;
+      g.p = r.p;
+      niveau = r.n;
+      if (geste === g) poserMarqueur(r.p);
+      if (g.dernier) orienter(g.dernier, g);
+    });
+  }, APPUI_LONG);
+  geste = g;
+});
+
+window.addEventListener("pointermove", (e) => {
+  if (!geste || e.pointerId !== geste.id) return;
+  if (geste.plan || geste.long) return orienter(e);
+  // Le doigt bouge avant l'appui long : c'est la vue qu'on tourne.
+  if (Math.hypot(e.clientX - geste.x, e.clientY - geste.y) > SEUIL_PX) annulerGeste();
+});
+
+window.addEventListener("pointerup", (e) => {
+  appuis.delete(e.pointerId);
+  if (!geste || e.pointerId !== geste.id) return;
+  const g = geste;
+  geste = null;
+  window.clearTimeout(g.minuterie);
+  controles.enabled = true;
+  void finirGeste(g, e);
+});
+window.addEventListener("pointercancel", (e) => {
+  appuis.delete(e.pointerId);
+  if (geste && e.pointerId === geste.id) annulerGeste();
+});
+
+function annulerGeste() {
+  if (!geste) return;
+  window.clearTimeout(geste.minuterie);
+  if (geste.p) {
+    // Le repère revient à la place connue (ou disparaît).
+    if (place && etape === "place") poserMarqueur(place, regardAvantPlan);
+    else marqueur.visible = false;
+  }
+  geste = null;
+  controles.enabled = true;
+}
+
+async function finirGeste(g: Geste, e: PointerEvent) {
+  if (g.plan || g.long) {
+    if (g.recherche) await g.recherche;
+    if (!g.p || !niveau) {
+      if (g.long) alerte("Touchez une surface de la maquette (sol, mur…).", 2500);
+      return;
+    }
+    place = g.p;
+    await entrerEnMarche(g.dir ?? dirDefaut(g.p));
+    return;
+  }
+  // Simple toucher sur la maquette en 3D.
+  if (Math.hypot(e.clientX - g.x, e.clientY - g.y) > SEUIL_PX) return;
+  const r = await pointDansMaquette(g.x, g.y);
+  if (!r || !actif || etape !== "niveau") return;
+  niveau = r.n;
+  place = r.p;
+  const dir = r.p.clone().sub(monde.camera.three.position).setY(0);
+  await entrerEnMarche(dir.lengthSq() > 1e-6 ? dir.normalize() : dirDefaut(r.p));
+}
+
+// --- Animation d'entrée : la vue plonge jusqu'à hauteur d'yeux -------------------------
+// Courbe depuis la vue de dessus vers l'œil (en arrivant par l'arrière), regard qui se
+// redresse, murs qui « poussent » (la coupe du plan monte) et angle de vue qui s'élargit.
+
+let enAnimation = false;
+const adoucir = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const palier = (a: number, b: number, t: number) => THREE.MathUtils.clamp((t - a) / (b - a), 0, 1);
+
+function plonger(oeil: THREE.Vector3, dir: THREE.Vector3) {
+  const p0 = controles.getPosition(new THREE.Vector3());
+  const t0 = controles.getTarget(new THREE.Vector3());
+  const cible = oeil.clone().addScaledVector(dir, 3);
+  const hauteur = Math.max(4, p0.y - oeil.y);
+  // Point de passage : au-dessus et un peu en arrière de l'œil.
+  const recul = Math.min(10, 2 + hauteur * 0.12);
+  const passage = new THREE.Vector3(oeil.x - dir.x * recul, oeil.y + Math.min(30, hauteur * 0.3), oeil.z - dir.z * recul);
+  const persp = monde.camera.threePersp;
+  const fov0 = persp.fov;
+  const fov1 = angleDeVisite();
+  const coupe = monde.renderer!.clippingPlanes.includes(planCoupe);
+  const coupe0 = planCoupe.constant;
+  const duree = 1400;
+  const pos = new THREE.Vector3();
+  const vise = new THREE.Vector3();
+  enAnimation = true;
+  controles.enabled = false;
+  return new Promise<void>((fin) => {
+    const debut = performance.now();
+    const image = (t: number) => {
+      if (!actif) {
+        enAnimation = false;
+        controles.enabled = true;
+        fin();
+        return;
+      }
+      const k = Math.min(1, (t - debut) / duree);
+      const e = adoucir(k);
+      const a = (1 - e) * (1 - e);
+      const b = 2 * (1 - e) * e;
+      const c = e * e;
+      pos.set(
+        p0.x * a + passage.x * b + oeil.x * c,
+        p0.y * a + passage.y * b + oeil.y * c,
+        p0.z * a + passage.z * b + oeil.z * c,
+      );
+      // Le regard se redresse un peu en avance sur la descente.
+      vise.copy(t0).lerp(cible, adoucir(palier(0, 0.85, k)));
+      void controles.setLookAt(pos.x, pos.y, pos.z, vise.x, vise.y, vise.z, false);
+      persp.fov = fov0 + (fov1 - fov0) * adoucir(palier(0.3, 1, k));
+      persp.updateProjectionMatrix();
+      if (coupe) planCoupe.constant = coupe0 + 3.5 * adoucir(palier(0.15, 0.9, k));
+      opaciteMarqueur(1 - palier(0.35, 0.7, k));
+      if (k < 1) requestAnimationFrame(image);
+      else {
+        enAnimation = false;
+        controles.enabled = true;
+        fin();
+      }
+    };
+    requestAnimationFrame(image);
+  });
+}
+
 // --- Étapes ----------------------------------------------------------------------------
 
 function armerClic() {
   definirModeClic(async (e) => {
     if (!niveau) return;
-    if (etape === "place") {
-      const p = pointAuSol(e, niveau.y);
-      if (!p) return;
-      place = p;
-      poserMarqueur(p);
-      etape = "regard";
-      dessiner();
-    } else if (etape === "regard" && place) {
-      const p = pointAuSol(e, niveau.y);
-      if (!p) return;
-      const dir = p.clone().sub(place);
-      poserMarqueur(place, dir);
-      await entrerEnMarche(dir);
-    } else if (etape === "gps1" || etape === "gps2" || etape === "recaler") {
+    // Niveau et plan : c'est le geste de placement (plus bas) qui répond.
+    if (etape === "gps1" || etape === "gps2" || etape === "recaler") {
       await placerPointGps(e);
     }
   }, "crosshair");
@@ -697,6 +927,22 @@ async function choisirNiveau(sol: Sol) {
   etape = "place";
   await vueEnPlan(sol);
   armerClic();
+  bloquerUnDoigt(true);
+  dessiner();
+}
+
+/** Retour au choix du niveau : la vue d'avant la visite revient (on peut y toucher la maquette). */
+async function retourNiveaux() {
+  etape = "niveau";
+  marqueur.visible = false;
+  monde.renderer!.setPlane(false, planCoupe);
+  bloquerUnDoigt(false);
+  definirModeClic(() => undefined);
+  const a = avant;
+  if (a) {
+    await definirProjection(a.ortho ? "Orthographic" : "Perspective");
+    await controles.setLookAt(a.pos.x, a.pos.y, a.pos.z, a.cible.x, a.cible.y, a.cible.z, false);
+  }
   dessiner();
 }
 
@@ -708,6 +954,7 @@ async function versPlan(e: Etape) {
   if (etape === "marche") {
     const p = controles.getPosition(new THREE.Vector3());
     regardAvantPlan.copy(controles.getTarget(new THREE.Vector3()).sub(p));
+    capDefaut.copy(regardAvantPlan).setY(0);
     // Le repère du plan montre où l'on est maintenant (on a pu marcher depuis).
     place = new THREE.Vector3(p.x, niveau.y, p.z);
   }
@@ -718,6 +965,7 @@ async function versPlan(e: Etape) {
   await vueEnPlan(niveau);
   if (place) poserMarqueur(place, regardAvantPlan);
   armerClic();
+  bloquerUnDoigt(e === "place");
   dessiner();
 }
 
@@ -739,20 +987,13 @@ function dessiner() {
   switch (etape) {
     case "niveau":
       texte.textContent = niveaux.length
-        ? "Choisissez le niveau où vous êtes."
+        ? "Choisissez votre niveau, ou touchez dans la maquette l'endroit où vous êtes (appui long et glisser pour orienter)."
         : "Aucun niveau trouvé dans les maquettes.";
       actions.append(listeNiveaux((s) => void choisirNiveau(s)));
       break;
     case "place":
-      texte.textContent = "Touchez sur le plan l'endroit où vous êtes.";
-      actions.append(puce("Autre niveau", () => ((etape = "niveau"), dessiner())));
-      break;
-    case "regard":
-      texte.textContent = "Touchez maintenant la direction de votre regard.";
-      actions.append(
-        puce("Entrer sans direction", () => void entrerEnMarche(new THREE.Vector3(0, 0, -1)), "", "Regarder vers le haut du plan"),
-        puce("Replacer", () => ((etape = "place"), dessiner())),
-      );
+      texte.textContent = "Posez le doigt où vous êtes. Glissez pour orienter la flèche, puis lâchez.";
+      actions.append(puce("Autre niveau", () => void retourNiveaux()));
       break;
     case "marche": {
       const ar = arActif();
@@ -896,6 +1137,10 @@ async function demarrer() {
   actions.replaceChildren();
   niveaux = regrouper(await solsDesNiveaux());
   if (!actif) return;
+  // Toucher la maquette sert à se placer (pas à ouvrir la fiche d'un élément).
+  definirModeClic(() => undefined);
+  capDefaut.copy(avant.cible).sub(avant.pos).setY(0);
+  inviterPleinEcran(true);
   dessiner();
 }
 
@@ -928,6 +1173,10 @@ async function quitter() {
   panneau.hidden = true;
   marqueur.visible = false;
   definirModeClic(null);
+  bloquerUnDoigt(false);
+  inviterPleinEcran(false);
+  geste = null;
+  controles.enabled = true;
   definirVisite(false);
   bloquerDecalage(false);
   monde.renderer!.setPlane(false, planCoupe);

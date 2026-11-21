@@ -3298,3 +3298,69 @@ a.projet-ligne {
   align-self: flex-start;
   font-size: 12px;
 }
+
+/* --- Plein écran : bouton rond à gauche de la manette ------------------------------ */
+
+.btn-plein-ecran {
+  appearance: none;
+  position: fixed;
+  z-index: 11;
+  right: 128px;
+  top: calc(var(--haut-barre) + var(--haut-outils) + 8px);
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--bord);
+  border-radius: 50%;
+  background: var(--panneau-plein);
+  color: var(--doux);
+  cursor: pointer;
+  padding: 0;
+}
+
+.btn-plein-ecran[hidden] {
+  display: none;
+}
+
+.btn-plein-ecran.actif {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #3a2a14;
+}
+
+/* À l'entrée de la visite : halo orange qui pulse, pour proposer le plein écran. */
+.btn-plein-ecran.invite {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: invite-plein-ecran 1.6s ease-in-out infinite;
+}
+
+@keyframes invite-plein-ecran {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 138, 31, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(255, 138, 31, 0);
+  }
+}
+
+@media (min-width: 820px) and (hover: hover) {
+  .btn-plein-ecran {
+    right: 88px;
+  }
+}
+
+@media (max-width: 349px) {
+  .btn-plein-ecran {
+    right: 88px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-plein-ecran.invite {
+    animation: none;
+  }
+}

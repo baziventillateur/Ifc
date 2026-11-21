@@ -35,8 +35,16 @@ let visite = false;
 export const modeOeil = () => oeil || visite;
 export const modeVisite = () => visite;
 
+// Placement dans la visite (visite.ts) : sur le plan, un doigt pose et oriente le repère ;
+// la vue ne tourne plus (deux doigts déplacent et zooment toujours).
+let unDoigtBloque = false;
+export function bloquerUnDoigt(oui: boolean) {
+  unDoigtBloque = oui;
+  reglerBoutons();
+}
+
 function reglerBoutons() {
-  const regarder = oeil || visite;
+  const regarder = oeil || visite || unDoigtBloque;
   controles.mouseButtons.middle = (visite ? ACTION.NONE : ACTION.TRUCK) as never;
   controles.mouseButtons.right = ACTION.NONE as never;
   controles.mouseButtons.left = (regarder ? ACTION.NONE : ACTION.ROTATE) as never;
@@ -228,6 +236,8 @@ try {
   // Angles par défaut.
 }
 const angles = () => (visite ? ANGLES_VISITE : ANGLES);
+/** Angle de vue de la visite (pour l'animation d'entrée). */
+export const angleDeVisite = () => angleVisite;
 const angleActuel = () => (visite ? angleVisite : angle);
 const btnProjection = document.getElementById("btn-projection");
 const ICONE_ORTHO =

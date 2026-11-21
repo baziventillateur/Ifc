@@ -107,7 +107,8 @@ async function toucher(e: PointerEvent) {
     await basculerSelection(v.modele, v.id);
     return;
   }
-  if (!v) {
+  // Toucher le vide, ou retoucher l'élément déjà sélectionné : on le désélectionne.
+  if (!v || (courant && courant.modele === v.modele && courant.id === v.id)) {
     await fermerFiche();
     return;
   }

@@ -181,10 +181,13 @@ window.addEventListener("pointermove", (e) => {
   // Souris : comme dans un jeu vidéo, le regard suit la souris (gauche → on regarde à
   // gauche, haut → on regarde en haut). Doigt : on tire l'image avec soi (photo à 360°).
   const sens = e.pointerType === "mouse" ? 1 : -1;
+  // En visite à la première personne, au doigt, gauche-droite comme dans un jeu : la vue
+  // tourne du côté où l'on glisse (haut-bas inchangé).
+  const sensH = visite ? 1 : sens;
   // Au doigt, sur un petit écran, il faut tourner plus vite pour un même geste.
   const k = e.pointerType === "mouse" ? SENSIBILITE : SENSIBILITE * 1.8;
-  if (regardExterne) regardExterne(sens * dx * k);
-  else tournerTete(sens * dx * k, sens * dy * k);
+  if (regardExterne) regardExterne(sensH * dx * k);
+  else tournerTete(sensH * dx * k, sens * dy * k);
 });
 function finRegard() {
   if (regard?.actif) canvas.classList.remove("regard");

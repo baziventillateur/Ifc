@@ -327,6 +327,9 @@ async function mettreANiveau(f: Fichier, ifc?: File) {
   alerte(`« ${local} » optimisée : elle s'ouvrira vite sur tous vos appareils.`);
 }
 
+/** Administrateur connecté (fonctions en essai, réservées pour l'instant). */
+export const estAdmin = () => etat.admin;
+
 export async function demarrerNuage(utilisateur: User) {
   etat.moi.id = utilisateur.id;
   etat.moi.email = utilisateur.email ?? "";

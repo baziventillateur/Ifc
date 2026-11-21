@@ -123,6 +123,11 @@ const SENSIBILITE = 0.22; // degrés par pixel
 const SEUIL = 5;
 let regard: { x: number; y: number; actif: boolean; id: number; droit: boolean } | null = null;
 const appuis = new Set<number>();
+/** Visite suivie par les capteurs du téléphone : le doigt corrige seulement la direction. */
+let regardExterne: ((lacet: number) => void) | null = null;
+export function definirRegardExterne(f: ((lacet: number) => void) | null) {
+  regardExterne = f;
+}
 
 function tournerTete(lacet: number, tangage: number) {
   const position = controles.getPosition(new THREE.Vector3());
@@ -175,7 +180,8 @@ window.addEventListener("pointermove", (e) => {
   const sens = e.pointerType === "mouse" ? 1 : -1;
   // Au doigt, sur un petit écran, il faut tourner plus vite pour un même geste.
   const k = e.pointerType === "mouse" ? SENSIBILITE : SENSIBILITE * 1.8;
-  tournerTete(sens * dx * k, sens * dy * k);
+  if (regardExterne) regardExterne(sens * dx * k);
+  else tournerTete(sens * dx * k, sens * dy * k);
 });
 function finRegard() {
   if (regard?.actif) canvas.classList.remove("regard");

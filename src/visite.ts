@@ -5,10 +5,26 @@
 //    la manette à l'écran (ou les flèches du clavier) pour avancer.
 // GPS : après un calage sur deux points touchés sur le plan, la position réelle du
 // téléphone déplace la vue. Le calage est gardé sur l'appareil pour le jeu de maquettes.
+// Capteurs (admin pour l'instant, voir suivi.ts) : caméra AR pour suivre les pas au
+// centimètre, ou gyroscope pour orienter la vue en bougeant le téléphone.
 import * as THREE from "three";
 import { ajusterDecalage, alerte, bloquerDecalage, bouton, cree, definirProjection, el, estOrtho, monde, rafraichir } from "./noyau";
 import { definirModeClic } from "./fiche";
-import { definirOeil, definirVisite, modeOeil } from "./navigation";
+import { definirOeil, definirRegardExterne, definirVisite, modeOeil } from "./navigation";
+import { estAdmin } from "./nuage/projets";
+import {
+  arActif,
+  arPossible,
+  fermerAR,
+  fermerGyro,
+  garderEcran,
+  gyroActif,
+  gyroPossible,
+  ouvrirAR,
+  ouvrirGyro,
+  orientationGyro,
+  type Lecture as Pose,
+} from "./suivi";
 import { solsDesNiveaux, type Sol } from "./niveaux";
 import { maquettes, visibles } from "./registre";
 
@@ -23,7 +39,7 @@ const canvas = monde.renderer!.three.domElement;
 const controles = monde.camera.controls;
 const btnVisite = el<HTMLButtonElement>("btn-visite");
 
-type Etape = "niveau" | "place" | "regard" | "marche" | "gps1" | "gps2" | "recaler" | "mesure";
+type Etape = "niveau" | "place" | "regard" | "marche" | "ar" | "gps1" | "gps2" | "recaler" | "mesure";
 let actif = false;
 let etape: Etape = "niveau";
 let niveaux: Sol[] = [];
@@ -147,13 +163,22 @@ async function entrerEnMarche(direction: THREE.Vector3) {
   await regarderDepuis(place, direction);
   etape = "marche";
   manette.hidden = !tactile();
+  // Suivi par capteurs : la pose du téléphone repart de ce point et de cette direction.
+  if (arActif() || gyroActif()) ancrer(direction);
   dessiner();
+  if (gyroActif()) relancer();
   await rafraichir();
 }
 
 /** Déplace l'œil à plat (garde la hauteur du niveau et la direction du regard). */
 function decaler(dx: number, dz: number) {
   if (!niveau) return;
+  if (arActif() && ancre) {
+    // La caméra AR place la vue à chaque image : on décale son point de départ.
+    ancre.p0.x += dx;
+    ancre.p0.z += dz;
+    return;
+  }
   const position = controles.getPosition(new THREE.Vector3());
   const cible = controles.getTarget(new THREE.Vector3());
   const dy = niveau.y + YEUX - position.y;
@@ -246,7 +271,18 @@ function avancer(t: number) {
       encore = true;
     }
   }
-  if (encore || suiviGps) boucle = requestAnimationFrame(avancer);
+  if (gyroActif() && ancre) {
+    const q = orientationGyro();
+    if (q) {
+      devantDe(q, devantTel);
+      if (ancre.attente) {
+        ancre.theta = lacet(ancre.dir) - lacet(devantTel);
+        ancre.attente = false;
+      }
+      viserDepuis(controles.getPosition(new THREE.Vector3()), devantTel);
+    }
+  }
+  if (encore || suiviGps || gyroActif()) boucle = requestAnimationFrame(avancer);
 }
 function relancer() {
   if (!boucle) {
@@ -452,6 +488,143 @@ async function placerPointGps(e: PointerEvent) {
   );
 }
 
+// --- Capteurs du téléphone (admin) ----------------------------------------------------------
+// La pose du téléphone est relative à son point de départ : on l'« ancre » sur la position
+// et la direction de la vue (theta = rotation entre le repère du téléphone et la maquette).
+
+type Ancre = { attente: boolean; dir: THREE.Vector3; p0: THREE.Vector3; x0: THREE.Vector3; theta: number };
+let ancre: Ancre | null = null;
+let arDispo = false;
+void arPossible.then((v) => (arDispo = v));
+let arPerdu = true;
+/** Dernière position donnée par la caméra AR (téléphone et vue), pour corriger la direction sur place. */
+const derniere = { xr: new THREE.Vector3(), vue: new THREE.Vector3(), ok: false };
+const AXE_Y = new THREE.Vector3(0, 1, 0);
+const devantTel = new THREE.Vector3();
+/** Cap d'une direction (0 = vers -Z, le haut du plan). */
+const lacet = (d: THREE.Vector3) => Math.atan2(-d.x, -d.z);
+const devantDe = (q: THREE.Quaternion, sortie: THREE.Vector3) => sortie.set(0, 0, -1).applyQuaternion(q);
+
+/** La prochaine mesure du téléphone correspondra à la vue actuelle (ou à la direction donnée). */
+function ancrer(direction?: THREE.Vector3) {
+  const p = controles.getPosition(new THREE.Vector3());
+  const d = direction ? direction.clone() : controles.getTarget(new THREE.Vector3()).sub(p);
+  d.setY(0);
+  if (d.lengthSq() < 1e-6) d.set(0, 0, -1);
+  ancre = { attente: true, dir: d.normalize(), p0: p, x0: new THREE.Vector3(), theta: 0 };
+  derniere.ok = false;
+  majRegard();
+}
+
+/** Regarde depuis pos dans la direction du téléphone, tournée vers la maquette. */
+function viserDepuis(pos: THREE.Vector3, devant: THREE.Vector3) {
+  const d = devant.clone().applyAxisAngle(AXE_Y, ancre!.theta);
+  // Jamais tout à fait à la verticale : la caméra ne saurait plus où est le haut.
+  const plat = Math.hypot(d.x, d.z);
+  if (plat < 1e-3) return;
+  d.y = THREE.MathUtils.clamp(d.y, -0.97, 0.97);
+  const k = Math.sqrt(1 - d.y * d.y) / plat;
+  d.x *= k;
+  d.z *= k;
+  void controles.setLookAt(pos.x, pos.y, pos.z, pos.x + d.x, pos.y + d.y, pos.z + d.z, false);
+}
+
+/** En montant un escalier avec la caméra AR, on change de niveau tout seul. */
+function suivreNiveau(sol: number) {
+  let n: Sol | null = null;
+  for (const s of niveaux) if (s.y <= sol + 0.6) n = s;
+  n ??= niveaux[0] ?? null;
+  if (n && n !== niveau) {
+    niveau = n;
+    dessiner();
+  }
+}
+
+function surImageAR(l: Pose) {
+  if (!actif || !ancre) return;
+  if (l.perdu !== arPerdu) {
+    arPerdu = l.perdu;
+    if (etape === "marche") dessiner();
+  }
+  if (etape !== "marche" || l.perdu) return;
+  devantDe(l.quat, devantTel);
+  if (ancre.attente) {
+    ancre.x0.copy(l.pos);
+    ancre.theta = lacet(ancre.dir) - lacet(devantTel);
+    ancre.attente = false;
+  }
+  // Déplacement depuis l'ancrage, tourné dans le repère de la maquette ; la hauteur suit aussi.
+  const v = l.pos.clone().sub(ancre.x0);
+  const monte = v.y;
+  v.setY(0).applyAxisAngle(AXE_Y, ancre.theta);
+  const pos = new THREE.Vector3(ancre.p0.x + v.x, ancre.p0.y + monte, ancre.p0.z + v.z);
+  viserDepuis(pos, devantTel);
+  derniere.xr.copy(l.pos);
+  derniere.vue.copy(pos);
+  derniere.ok = true;
+  suivreNiveau(pos.y - YEUX);
+}
+
+function majRegard() {
+  definirRegardExterne(
+    actif && (arActif() || gyroActif())
+      ? (l) => {
+          if (!ancre || ancre.attente) return;
+          // On tourne sur place : le point de départ devient l'endroit où l'on est.
+          if (arActif() && derniere.ok) {
+            ancre.p0.copy(derniere.vue);
+            ancre.x0.copy(derniere.xr);
+          }
+          ancre.theta -= THREE.MathUtils.degToRad(l);
+        }
+      : null,
+  );
+}
+
+async function lancerAR() {
+  // Appelé depuis le toucher sur « Démarrer » : la session doit s'ouvrir tout de suite.
+  if (gyroActif()) fermerGyro();
+  if (suiviGps) arreterGps();
+  etape = "marche";
+  arPerdu = true;
+  ancrer();
+  const erreur = await ouvrirAR(surImageAR, finAR);
+  if (erreur) {
+    ancre = null;
+    alerte(erreur, 6000);
+  }
+  majRegard();
+  if (actif) dessiner();
+}
+
+function finAR() {
+  if (!gyroActif()) ancre = null;
+  majRegard();
+  if (!actif) return;
+  if (etape === "ar") etape = "marche";
+  dessiner();
+}
+
+async function lancerGyro() {
+  const erreur = await ouvrirGyro();
+  if (erreur) {
+    alerte(erreur, 5000);
+    return;
+  }
+  if (!actif || etape !== "marche") return fermerGyro();
+  ancrer();
+  dessiner();
+  relancer();
+  alerte("Tenez le téléphone droit devant vous : la vue suit ses mouvements.", 3500);
+}
+
+function arreterGyro() {
+  fermerGyro();
+  ancre = null;
+  majRegard();
+  dessiner();
+}
+
 // --- Étapes ----------------------------------------------------------------------------
 
 function armerClic() {
@@ -478,8 +651,10 @@ function armerClic() {
 
 async function choisirNiveau(sol: Sol) {
   const enMarche = etape === "marche";
+  const ancien = niveau;
   niveau = sol;
   if (enMarche) {
+    if (arActif() && ancre && ancien) ancre.p0.y += sol.y - ancien.y;
     // Changement de niveau en marchant : même endroit, autre étage.
     const p = controles.getPosition(new THREE.Vector3());
     decaler(0, 0);
@@ -500,14 +675,17 @@ const regardAvantPlan = new THREE.Vector3(0, 0, -1);
 async function versPlan(e: Etape) {
   if (!niveau) return;
   if (etape === "marche") {
-    regardAvantPlan.copy(controles.getTarget(new THREE.Vector3()).sub(controles.getPosition(new THREE.Vector3())));
+    const p = controles.getPosition(new THREE.Vector3());
+    regardAvantPlan.copy(controles.getTarget(new THREE.Vector3()).sub(p));
+    // Le repère du plan montre où l'on est maintenant (on a pu marcher depuis).
+    place = new THREE.Vector3(p.x, niveau.y, p.z);
   }
   etape = e;
   bloquerDecalage(false);
   manette.hidden = true;
   definirVisite(false);
   await vueEnPlan(niveau);
-  if (place) poserMarqueur(place);
+  if (place) poserMarqueur(place, regardAvantPlan);
   armerClic();
   dessiner();
 }
@@ -522,7 +700,7 @@ function listeNiveaux(action: (s: Sol) => void) {
 }
 
 function dessiner() {
-  panneau.classList.toggle("compact", etape === "marche");
+  panneau.classList.toggle("compact", etape === "marche" || etape === "ar");
   actions.replaceChildren();
   titre.textContent = niveau && etape !== "niveau" ? `Visite · ${niveau.nom}` : "Visite";
   switch (etape) {
@@ -544,11 +722,21 @@ function dessiner() {
       );
       break;
     case "marche": {
-      texte.textContent = suiviGps
-        ? "La vue suit votre position. Un doigt pour regarder autour de vous."
-        : tactile()
-          ? "Manette pour avancer, un doigt pour regarder autour de vous."
-          : "Flèches pour avancer, clic maintenu pour regarder autour de vous.";
+      const ar = arActif();
+      const gyro = gyroActif();
+      texte.textContent = ar
+        ? arPerdu
+          ? "Suivi perdu : visez un mur ou un sol avec du relief, et bougez doucement."
+          : "La vue suit vos pas. Glissez un doigt pour corriger la direction."
+        : gyro
+          ? suiviGps
+            ? "Le GPS déplace la vue, le téléphone l'oriente. Glissez un doigt pour corriger la direction."
+            : "Le téléphone oriente la vue, la manette fait avancer. Glissez un doigt pour corriger la direction."
+          : suiviGps
+            ? "La vue suit votre position. Un doigt pour regarder autour de vous."
+            : tactile()
+              ? "Manette pour avancer, un doigt pour regarder autour de vous."
+              : "Flèches pour avancer, clic maintenu pour regarder autour de vous.";
       const niveauBtn = puce("Niveau", () => {
         const deja = actions.querySelector(".visite-niveaux");
         if (deja) return deja.remove();
@@ -563,8 +751,8 @@ function dessiner() {
             dessiner();
           }, "actif")
         : puce("Suivre le GPS", () => void lancerGps(), "", "Faire suivre la vue par la position du téléphone");
-      actions.append(gps);
-      if (suiviGps) {
+      if (!ar) actions.append(gps);
+      if (suiviGps && !ar) {
         actions.append(
           puce("Recaler", () => void versPlan("recaler"), "", "Touchez sur le plan où vous êtes vraiment"),
           puce("Nouveau calage", () => {
@@ -574,10 +762,36 @@ function dessiner() {
           }),
         );
       }
+      // Capteurs du téléphone : en essai, réservés à l'administrateur.
+      if (estAdmin()) {
+        if (arDispo) {
+          actions.append(
+            ar
+              ? puce("Arrêter la caméra", () => fermerAR(), "actif")
+              : puce("Caméra AR", () => ((etape = "ar"), dessiner()), "", "Suivre vos pas avec la caméra du téléphone"),
+          );
+        }
+        if (!ar && tactile() && gyroPossible()) {
+          actions.append(
+            gyro
+              ? puce("Gyroscope", () => arreterGyro(), "actif")
+              : puce("Gyroscope", () => void lancerGyro(), "", "Orienter la vue en bougeant le téléphone"),
+          );
+        }
+      }
       actions.append(niveauBtn, puce("Plan", () => void versPlan("place"), "", "Revenir au plan pour vous replacer"));
-      manette.hidden = suiviGps || !tactile();
+      manette.hidden = suiviGps || ar || !tactile();
+      void garderEcran(suiviGps || ar || gyro);
       break;
     }
+    case "ar":
+      texte.textContent =
+        "Mettez-vous à l'endroit de la vue, téléphone droit devant vous dans la même direction, puis touchez Démarrer.";
+      actions.append(
+        puce("Démarrer", () => void lancerAR(), "actif"),
+        puce("Annuler", () => ((etape = "marche"), dessiner())),
+      );
+      break;
     case "gps1":
       texte.textContent =
         "Calage GPS, point 1 : placez-vous sur un endroit facile à repérer (angle de poteau, porte…), puis touchez-le sur le plan.";
@@ -668,6 +882,11 @@ async function quitter() {
   if (!actif) return;
   actif = false;
   arreterGps();
+  fermerAR();
+  fermerGyro();
+  ancre = null;
+  definirRegardExterne(null);
+  void garderEcran(false);
   point1 = null;
   poussee = null;
   manette.hidden = true;

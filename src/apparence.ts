@@ -44,6 +44,8 @@ export const STYLES = {
   quantites: style("#e879f9"),
   ia: style("#a78bfa"),
   remarque: style("#facc15"),
+  /** Avancement : élément réalisé (vert doux). */
+  realise: style("#6fdc8c"),
 };
 
 type Couche = { nom: string; style: MaterialDefinition; ids: Ids; focus: boolean };

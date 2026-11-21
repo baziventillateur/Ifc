@@ -3243,3 +3243,53 @@ a.projet-ligne {
     display: none;
   }
 }
+
+/* --- Avancement : bouton « Réalisé » dans la fiche (visite) ------------------------- */
+
+.fiche-entete > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.fiche-realise {
+  appearance: none;
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px 0 5px;
+  border: 1px solid var(--bord);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--doux);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fiche-realise-case {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.fiche-realise.fait {
+  border-color: #2f9e5f;
+  background: #1d6b41;
+  color: #e3ffec;
+}
+
+.fiche-realise.fait .fiche-realise-case {
+  border-color: #8ff0b0;
+  background: #8ff0b0;
+  color: #0f3d24;
+}

@@ -13,6 +13,7 @@ import { definirModeClic } from "./fiche";
 import { definirOeil, definirRegardExterne, definirVisite, modeOeil } from "./navigation";
 import { estAdmin, hauteurTelephone } from "./nuage/projets";
 import { replierCalques } from "./maquettes";
+import { activerAvancement } from "./avancement";
 import {
   arActif,
   arPossible,
@@ -885,6 +886,7 @@ async function demarrer() {
   };
   if (avant.oeil) definirOeil(false);
   calquesReplies = replierCalques(true);
+  activerAvancement(true);
   etape = "niveau";
   niveau = null;
   place = null;
@@ -932,6 +934,7 @@ async function quitter() {
   btnVisite.setAttribute("aria-pressed", "false");
   replierCalques(calquesReplies);
   replierPanneau(false);
+  activerAvancement(false);
   const a = avant;
   avant = null;
   if (a) {

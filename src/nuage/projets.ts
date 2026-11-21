@@ -283,6 +283,7 @@ async function ouvrirProjet(projet: Projet | null) {
   }
   await chargerModifications().catch((e) => console.error("Modifications du projet", e));
   majBandeau();
+  projetCharge.emit(etat.courant && etat.fichiers.length > 0 ? etat.courant.id : null);
 }
 
 async function telechargerFichier(chemin: string) {
@@ -326,6 +327,9 @@ async function mettreANiveau(f: Fichier, ifc?: File) {
   Object.assign(f, maj);
   alerte(`« ${local} » optimisée : elle s'ouvrira vite sur tous vos appareils.`);
 }
+
+/** Émis quand un projet vient d'être ouvert : son identifiant, ou null (maquette d'essai). */
+export const projetCharge = new Signal<string | null>();
 
 /** Administrateur connecté (fonctions en essai, réservées pour l'instant). */
 export const estAdmin = () => etat.admin;

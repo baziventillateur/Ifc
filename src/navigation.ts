@@ -28,13 +28,23 @@ const ACTION = (controles.constructor as unknown as { ACTION: Record<string, num
 // Mode « œil » (bouton sur la vue, pour le téléphone) : un doigt tourne la tête sur
 // place au lieu de faire tourner la maquette. Deux doigts zooment et déplacent toujours.
 let oeil = false;
-export const modeOeil = () => oeil;
+// Visite à la première personne (visite.ts) : regard comme en mode œil, sans zoom ni
+// déplacement libre ; on avance avec la manette, les flèches ou le GPS.
+let visite = false;
+export const modeOeil = () => oeil || visite;
+export const modeVisite = () => visite;
 
 function reglerBoutons() {
-  controles.mouseButtons.middle = ACTION.TRUCK as never;
+  const regarder = oeil || visite;
+  controles.mouseButtons.middle = (visite ? ACTION.NONE : ACTION.TRUCK) as never;
   controles.mouseButtons.right = ACTION.NONE as never;
-  controles.mouseButtons.left = (oeil ? ACTION.NONE : ACTION.ROTATE) as never;
-  controles.touches.one = (oeil ? ACTION.NONE : ACTION.TOUCH_ROTATE) as never;
+  controles.mouseButtons.left = (regarder ? ACTION.NONE : ACTION.ROTATE) as never;
+  controles.touches.one = (regarder ? ACTION.NONE : ACTION.TOUCH_ROTATE) as never;
+  if (visite) {
+    controles.mouseButtons.wheel = ACTION.NONE as never;
+    controles.touches.two = ACTION.NONE as never;
+    controles.touches.three = ACTION.NONE as never;
+  }
 }
 reglerBoutons();
 // Le changement de projection remet les boutons d'origine de la bibliothèque.
@@ -132,7 +142,7 @@ canvas.addEventListener("pointerdown", (e) => {
   appuis.add(e.pointerId);
   if (e.pointerType === "mouse" && e.button === 2) {
     regard = { x: e.clientX, y: e.clientY, actif: false, id: e.pointerId, droit: true };
-  } else if (oeil && (e.pointerType !== "mouse" || e.button === 0)) {
+  } else if ((oeil || visite) && (e.pointerType !== "mouse" || e.button === 0)) {
     // Un second doigt : c'est un zoom ou un déplacement, plus un regard.
     if (appuis.size > 1) finRegard();
     else regard = { x: e.clientX, y: e.clientY, actif: false, id: e.pointerId, droit: false };
@@ -353,6 +363,20 @@ export function definirOeil(actif: boolean) {
 }
 btnOeil?.addEventListener("click", () => definirOeil(!oeil));
 
+/** Entrée et sortie de la visite : la molette et les deux doigts reprennent leur rôle à la sortie. */
+export function definirVisite(actif: boolean) {
+  visite = actif;
+  finRegard();
+  if (!actif) {
+    const ortho = monde.camera.projection.current === "Orthographic";
+    controles.mouseButtons.wheel = (ortho ? ACTION.ZOOM : ACTION.DOLLY) as never;
+    const pincer = (ortho ? ACTION.TOUCH_ZOOM_TRUCK : ACTION.TOUCH_DOLLY_TRUCK) as never;
+    controles.touches.two = pincer;
+    controles.touches.three = pincer;
+  }
+  reglerBoutons();
+}
+
 // --- Flèches du clavier : marcher dans la maquette ----------------------------------------
 
 const TOUCHES = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown"]);
@@ -361,6 +385,7 @@ let rapide = false;
 let dernier = 0;
 let boucle = 0;
 const VITESSE = 4; // mètres par seconde
+const VITESSE_VISITE = 1.6; // en visite : allure de marche
 
 function pas(t: number) {
   boucle = 0;
@@ -372,7 +397,8 @@ function pas(t: number) {
   const avance = sens("ArrowUp", "ArrowDown");
   // Gauche / droite : pas de côté, comme dans un jeu vidéo (la souris sert à tourner la tête).
   const cote = sens("ArrowRight", "ArrowLeft");
-  const monte = sens("PageUp", "PageDown");
+  // En visite, on reste à hauteur d'yeux sur le niveau choisi.
+  const monte = visite ? 0 : sens("PageUp", "PageDown");
 
   if (avance || cote || monte) {
     if (avance && monde.camera.projection.current === "Orthographic") {
@@ -392,7 +418,7 @@ function pas(t: number) {
     const droite = devant.clone().cross(new THREE.Vector3(0, 1, 0));
     const d = devant.multiplyScalar(avance).addScaledVector(droite, cote);
     if (d.lengthSq() > 1) d.normalize();
-    d.multiplyScalar(VITESSE * facteur * dt);
+    d.multiplyScalar((visite ? VITESSE_VISITE : VITESSE) * facteur * dt);
     d.y += monte * VITESSE * 0.75 * facteur * dt;
     position.add(d);
     cible.add(d);

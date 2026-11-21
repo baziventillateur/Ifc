@@ -2,12 +2,12 @@
 // un clic sur une face pose tout de suite la coupe, alignée sur elle ; la poignée ✂ la
 // déplace perpendiculairement à la face. Les coupes horizontale (par niveau) et
 // verticale (selon X ou Y) sont rangées dans « Autres coupes ».
-import { boitesDe, completerTir } from "../deplacements";
+import { completerTir } from "../deplacements";
 import * as THREE from "three";
 import { alerte, bouton, cree, el, lanceur, monde, nombre, rafraichir, versIfc } from "../noyau";
 import { definirModeClic } from "../fiche";
 import { changement, visibles } from "../registre";
-import { indexDeTout } from "../index-elements";
+import { solsDesNiveaux } from "../niveaux";
 import { enregistrerOutil, marquerOutil } from "./panneau";
 import { curseur, interrupteur, note, puces, titreSection } from "./ui";
 
@@ -312,37 +312,12 @@ enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
     const n = ++calcul;
     niveaux.replaceChildren();
     niveauxNote.textContent = "Analyse des niveaux…";
-    const liste = visibles();
-    const res = await indexDeTout(liste);
+    const tries = await solsDesNiveaux(visibles());
     if (n !== calcul) return;
-    // Hauteur du sol de chaque niveau : bas des murs et poteaux (sinon de tous ses éléments).
-    const sols = new Map<string, { y: number; alt: number }>();
-    for (const { m, idx } of res) {
-      const parNiveau = new Map<string, number[]>();
-      for (const e of idx.elements.values()) {
-        if (e.niveau === "Sans niveau") continue;
-        const porteur = /^IFC(WALL|COLUMN)/.test(e.cat);
-        const cle = e.niveau + (porteur ? "|p" : "|a");
-        if (!parNiveau.has(cle)) parNiveau.set(cle, []);
-        parNiveau.get(cle)!.push(e.id);
-      }
-      for (const [nom, alt] of idx.niveaux) {
-        if (!Number.isFinite(alt)) continue;
-        const ids = (parNiveau.get(nom + "|p") ?? parNiveau.get(nom + "|a") ?? []).slice(0, 300);
-        if (!ids.length) continue;
-        const boites = await boitesDe(m, ids);
-        const bas = boites.map((b) => b.min.y).sort((a, b) => a - b);
-        const y = bas[Math.floor(bas.length * 0.2)];
-        const avant = sols.get(nom);
-        if (!avant || y < avant.y) sols.set(nom, { y, alt });
-      }
-    }
-    if (n !== calcul) return;
-    const tries = [...sols.entries()].sort((a, b) => a[1].y - b[1].y);
     niveauxNote.textContent = tries.length
       ? "Coupe à 1,20 m au-dessus du sol du niveau."
       : "Aucun niveau trouvé dans les maquettes.";
-    for (const [nom, { y }] of tries) {
+    for (const { nom, y } of tries) {
       niveaux.append(
         bouton("puce", nom, () => {
           etat.h.y = y + 1.2;

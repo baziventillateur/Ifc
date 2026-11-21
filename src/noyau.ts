@@ -194,7 +194,18 @@ export function recentrerPivot(rayon?: number) {
   void c.setLookAt(base.x, base.y, base.z, cible.x, cible.y, cible.z, false);
 }
 
+let decalageBloque = false;
+/** Visite à la première personne : l'œil reste à sa hauteur, sans décalage de mise en page. */
+export function bloquerDecalage(bloque: boolean) {
+  decalageBloque = bloque;
+  if (bloque) {
+    decalageMise = 0;
+    void monde.camera.controls.setFocalOffset(0, 0, 0, false);
+  }
+}
+
 export function ajusterDecalage(transition = true) {
+  if (decalageBloque) return;
   const canvas = monde.renderer!.three.domElement;
   const H = canvas.clientHeight || window.innerHeight;
   let bas = 0;

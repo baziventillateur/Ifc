@@ -73,9 +73,12 @@ canvas.addEventListener("pointerdown", (e) => {
       const hit = completerTir(brut, position);
       if (hit?.point) dernierPoint = (hit.point as THREE.Vector3).clone();
       if (mien !== tour || !hit?.point) return;
-      monde.camera.controls.setOrbitPoint(hit.point.x, hit.point.y, hit.point.z);
       pointTouche = (hit.point as THREE.Vector3).clone();
       dernierPoint = (hit.point as THREE.Vector3).clone();
+      // En mode regard ou en visite, on tourne la tête sur place : pas de pivot sur l'objet
+      // (il déplaçait la cible et décalait l'œil).
+      if (modeOeil()) return;
+      monde.camera.controls.setOrbitPoint(hit.point.x, hit.point.y, hit.point.z);
       pivotPose = true;
     })
     .catch(() => {});

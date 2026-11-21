@@ -2968,3 +2968,183 @@ body:has(.porte) .version-etiquette {
 a.projet-ligne {
   text-decoration: none;
 }
+
+/* --- Visite à la première personne (bouton manette) ------------------------------------ */
+.btn-visite {
+  appearance: none;
+  position: fixed;
+  z-index: 11;
+  right: 88px;
+  top: calc(var(--haut-barre) + var(--haut-outils) + 8px);
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--bord);
+  border-radius: 50%;
+  background: var(--panneau-plein);
+  color: var(--doux);
+  cursor: pointer;
+  padding: 0;
+}
+
+.btn-visite.actif {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #3a2a14;
+}
+
+@media (min-width: 820px) and (hover: hover) {
+  .btn-visite {
+    right: 48px;
+  }
+}
+
+@media (max-width: 349px) {
+  .btn-visite {
+    right: 48px;
+  }
+}
+
+.visite-panneau {
+  position: fixed;
+  z-index: 40;
+  left: 50%;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 16px));
+  padding: 8px 10px 10px;
+  border: 1px solid var(--bord);
+  border-radius: 12px;
+  background: rgba(22, 27, 34, 0.96);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+}
+
+.visite-panneau.compact {
+  left: auto;
+  right: 8px;
+  transform: none;
+  width: min(300px, calc(100vw - 130px));
+  padding: 6px 8px 8px;
+  font-size: 12px;
+}
+
+.visite-entete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.visite-entete strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.visite-gps {
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--doux);
+}
+
+.visite-gps.bon {
+  color: #3ccf7a;
+}
+
+.visite-gps.moyen {
+  color: #f6c945;
+}
+
+.visite-gps.faible {
+  color: #e5484d;
+}
+
+.visite-fermer {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: #232b35;
+  color: var(--doux);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+
+.visite-texte {
+  color: var(--doux);
+  line-height: 1.35;
+  margin-bottom: 6px;
+}
+
+.visite-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.visite-niveaux {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  width: 100%;
+  max-height: 128px;
+  overflow-y: auto;
+}
+
+.visite-puce {
+  appearance: none;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--bord);
+  border-radius: 13px;
+  background: #1b222b;
+  color: var(--texte);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.visite-puce.actif {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #3a2a14;
+}
+
+.manette {
+  position: fixed;
+  z-index: 40;
+  left: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  width: 96px;
+  height: 96px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+  background: rgba(15, 19, 24, 0.42);
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.manette[hidden] {
+  display: none;
+}
+
+.manette-bille {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 138, 31, 0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}

@@ -7,6 +7,7 @@ import { demanderDepot, demarrerNuage, deposer } from "./nuage/projets";
 import "./fiche";
 import "./pivot";
 import "./navigation";
+import "./visite";
 import "./mise-a-jour";
 import "./boutons-historique";
 

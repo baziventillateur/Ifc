@@ -56,7 +56,7 @@ export async function inviterParCourriel(
     jours: VALIDITE_JOURS,
     lien: `${SITE}?invitation=${jeton}`,
   });
-  const envoi = await envoyer(o.email, courriel, { repondreA: o.inviteur.email, etiquette: "invitation" });
+  const envoi = await envoyer(o.email, courriel, { etiquette: "invitation" });
   return { enregistre: true, envoi };
 }
 
@@ -68,5 +68,5 @@ export function prevenirAjout(o: { projetId: string; projetNom: string; email: s
     email: o.email,
     lien: `${SITE}?projet=${o.projetId}`,
   });
-  return envoyer(o.email, courriel, { repondreA: o.inviteur.email, etiquette: "ajout" });
+  return envoyer(o.email, courriel, { etiquette: "ajout" });
 }

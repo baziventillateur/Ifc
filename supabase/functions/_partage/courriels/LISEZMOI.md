@@ -1,7 +1,7 @@
 # E-mails NexBim
 
 Tous les e-mails de NexBim sont écrits dans ce dossier, versionnés dans GitHub, et envoyés par Resend
-avec l'expéditeur `NexBim <nextbeam@paceapp.fr>`. Rien n'est à coller dans le tableau de bord Supabase.
+avec l'expéditeur `NexBim <nexbim@paceapp.fr>`, réponses vers `nexbim@paceapp.fr`. Rien n'est à coller dans le tableau de bord Supabase.
 
 | Fichier | Rôle |
 |---|---|

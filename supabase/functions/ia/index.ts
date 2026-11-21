@@ -33,7 +33,7 @@ async function alerter(email: string, prenom: string) {
       method: "POST",
       headers: { Authorization: `Bearer ${cle}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: "NexBim <nextbeam@paceapp.fr>",
+        from: "NexBim <nexbim@paceapp.fr>",
         to: [ADMIN],
         subject: `NexBim · ${qui} a terminé son essai de l'IA`,
         text:

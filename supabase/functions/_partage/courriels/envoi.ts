@@ -1,8 +1,10 @@
 // Envoi d'un e-mail NexBim par Resend (secret RESEND_API_KEY dans Supabase → Edge Functions → Secrets).
 import type { Courriel } from "./modeles.ts";
 
-export const EXPEDITEUR = "NexBim <nextbeam@paceapp.fr>";
-export const REPONSE_PAR_DEFAUT = "contact@paceapp.fr";
+/** Adresse d'envoi et de réponse de tous les e-mails NexBim. */
+export const ADRESSE = "nexbim@paceapp.fr";
+export const EXPEDITEUR = `NexBim <${ADRESSE}>`;
+export const REPONSE_PAR_DEFAUT = ADRESSE;
 
 export type ResultatEnvoi = { ok: true; id: string } | { ok: false; raison: string };
 

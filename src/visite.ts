@@ -327,7 +327,11 @@ function avancer(t: number) {
       devantDe(q, devantTel);
       if (ancre.attente) {
         ancre.theta = lacet(ancre.dir) - lacet(devantTel);
+        ancre.tangage = tangageDe(devantTel);
         ancre.attente = false;
+      } else if (ancre.recalerTangage) {
+        ancre.tangage = tangageDe(devantTel);
+        ancre.recalerTangage = false;
       }
       viserDepuis(controles.getPosition(new THREE.Vector3()), devantTel);
     }
@@ -542,7 +546,17 @@ async function placerPointGps(e: PointerEvent) {
 // La pose du téléphone est relative à son point de départ : on l'« ancre » sur la position
 // et la direction de la vue (theta = rotation entre le repère du téléphone et la maquette).
 
-type Ancre = { attente: boolean; dir: THREE.Vector3; p0: THREE.Vector3; x0: THREE.Vector3; theta: number };
+type Ancre = {
+  attente: boolean;
+  dir: THREE.Vector3;
+  p0: THREE.Vector3;
+  x0: THREE.Vector3;
+  theta: number;
+  /** Inclinaison du téléphone tenu « droit » au départ : elle devient l'horizontale. */
+  tangage: number;
+  /** Portrait ↔ paysage : on reprend l'horizontale à la mesure suivante. */
+  recalerTangage: boolean;
+};
 let ancre: Ancre | null = null;
 let arDispo = false;
 void arPossible.then((v) => (arDispo = v));
@@ -561,10 +575,22 @@ function ancrer(direction?: THREE.Vector3) {
   const d = direction ? direction.clone() : controles.getTarget(new THREE.Vector3()).sub(p);
   d.setY(0);
   if (d.lengthSq() < 1e-6) d.set(0, 0, -1);
-  ancre = { attente: true, dir: d.normalize(), p0: p, x0: new THREE.Vector3(), theta: 0 };
+  ancre = { attente: true, dir: d.normalize(), p0: p, x0: new THREE.Vector3(), theta: 0, tangage: 0, recalerTangage: false };
   derniere.ok = false;
   majRegard();
 }
+
+/**
+ * Inclinaison du téléphone (vers le haut > 0). Au-delà de 30°, on ne la prend pas pour
+ * l'horizontale : on considère que le téléphone visait le sol ou le plafond.
+ */
+function tangageDe(devant: THREE.Vector3) {
+  const t = Math.asin(THREE.MathUtils.clamp(devant.y, -1, 1));
+  return Math.abs(t) <= THREE.MathUtils.degToRad(30) ? t : 0;
+}
+window.matchMedia("(orientation: landscape)").addEventListener("change", () => {
+  if (ancre) ancre.recalerTangage = true;
+});
 
 /** Regarde depuis pos dans la direction du téléphone, tournée vers la maquette. */
 function viserDepuis(pos: THREE.Vector3, devant: THREE.Vector3) {
@@ -572,8 +598,10 @@ function viserDepuis(pos: THREE.Vector3, devant: THREE.Vector3) {
   // Jamais tout à fait à la verticale : la caméra ne saurait plus où est le haut.
   const plat = Math.hypot(d.x, d.z);
   if (plat < 1e-3) return;
+  // Le téléphone tenu comme au départ regarde à l'horizontale.
+  const tangage = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(d.y, -1, 1)) - ancre!.tangage, -1.33, 1.33);
   // Vue orthogonale : coupe verticale, regard horizontal (seul le cap du téléphone compte).
-  d.y = estOrtho() ? 0 : THREE.MathUtils.clamp(d.y, -0.97, 0.97);
+  d.y = estOrtho() ? 0 : Math.sin(tangage);
   const k = Math.sqrt(1 - d.y * d.y) / plat;
   d.x *= k;
   d.z *= k;
@@ -602,7 +630,11 @@ function surImageAR(l: Pose) {
   if (ancre.attente) {
     ancre.x0.copy(l.pos);
     ancre.theta = lacet(ancre.dir) - lacet(devantTel);
+    ancre.tangage = tangageDe(devantTel);
     ancre.attente = false;
+  } else if (ancre.recalerTangage) {
+    ancre.tangage = tangageDe(devantTel);
+    ancre.recalerTangage = false;
   }
   // Déplacement depuis l'ancrage, tourné dans le repère de la maquette ; la hauteur suit aussi.
   const v = l.pos.clone().sub(ancre.x0);

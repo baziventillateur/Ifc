@@ -3293,3 +3293,8 @@ a.projet-ligne {
   background: #8ff0b0;
   color: #0f3d24;
 }
+
+.styles-proche .lien {
+  align-self: flex-start;
+  font-size: 12px;
+}

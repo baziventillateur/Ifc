@@ -153,13 +153,21 @@ enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
   maj();
 
   // --- Voir à travers les objets proches
-  const CLE_PROCHE = "nexbim-proche";
-  const procheR = { actif: false, distance: 4, force: 0.45 };
+  // Par défaut : jusqu'à 0,5 m, transparence 45 % ; « Réinitialiser » y revient.
+  const PROCHE_DEFAUT = { distance: 0.5, force: 0.45 };
+  const CLE_PROCHE = "nexbim-proche-2";
+  const procheR = { actif: false, ...PROCHE_DEFAUT };
   try {
-    const lu = JSON.parse(localStorage.getItem(CLE_PROCHE) || "{}");
-    if (typeof lu.actif === "boolean") procheR.actif = lu.actif;
-    if (lu.distance > 0) procheR.distance = Math.min(30, Math.max(0.5, Number(lu.distance)));
-    if (lu.force > 0) procheR.force = Math.min(0.9, Math.max(0.1, Number(lu.force)));
+    const lu = JSON.parse(localStorage.getItem(CLE_PROCHE) || "null");
+    if (lu) {
+      if (typeof lu.actif === "boolean") procheR.actif = lu.actif;
+      if (lu.distance > 0) procheR.distance = Math.min(30, Math.max(0.5, Number(lu.distance)));
+      if (lu.force > 0) procheR.force = Math.min(0.9, Math.max(0.1, Number(lu.force)));
+    } else {
+      // Ancien réglage : on garde seulement l'interrupteur, les valeurs passent aux nouvelles valeurs par défaut.
+      const ancien = JSON.parse(localStorage.getItem("nexbim-proche") || "{}");
+      if (typeof ancien.actif === "boolean") procheR.actif = ancien.actif;
+    }
   } catch {
     // Réglages par défaut.
   }
@@ -170,6 +178,7 @@ enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
     valeurDistance.textContent = `${nombre(procheR.distance, 1)} m`;
     valeurForce.textContent = `${Math.round(procheR.force * 100)} %`;
     reglagesProche.hidden = !procheR.actif;
+    reinitProche.hidden = procheR.distance === PROCHE_DEFAUT.distance && procheR.force === PROCHE_DEFAUT.force;
     try {
       localStorage.setItem(CLE_PROCHE, JSON.stringify(procheR));
     } catch {
@@ -192,9 +201,14 @@ enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
     return l;
   };
   const reglagesProche = cree("div", "styles-proche");
+  const reinitProche = bouton("lien", "Réinitialiser (0,5 m · 45 %)", () => {
+    Object.assign(procheR, PROCHE_DEFAUT);
+    majProcheUi();
+  });
   reglagesProche.append(
     ligne("Jusqu'à", valeurDistance, () => pasDistance(-1), () => pasDistance(1)),
     ligne("Transparence", valeurForce, () => pasForce(-1), () => pasForce(1)),
+    reinitProche,
   );
   blocProche.append(
     interrupteur("Voir à travers les objets proches", procheR.actif, (v) => {

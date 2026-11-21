@@ -65,7 +65,7 @@ monde.camera.controls.addEventListener("update", () => fragments.core.update());
 // au-delà de la distance, tout reste plein. Aucun tri ni recalcul : c'est le dessin
 // de chaque pixel qui décide, donc ça suit la caméra sans ralentir.
 const proche = { uProche: { value: 0 }, uProcheForce: { value: 0.45 } };
-const reglageProche = { actif: false, distance: 4, force: 0.45 };
+const reglageProche = { actif: false, distance: 0.5, force: 0.45 };
 
 /** Ajoute l'effet « objets proches » à un matériau (maquettes et éléments déplacés). */
 export function brancherProche(materiau: THREE.Material) {

@@ -928,8 +928,10 @@ async function voirPhoto(c: Capture) {
 
 // --- Bouton -------------------------------------------------------------------------------
 
+// Capture d'écran : un cadre avec ses coins et une petite image (l'appareil photo est
+// réservé aux photos du chantier, en visite).
 const ICONE =
-  '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.2l1.5-2h5.6l1.5 2h2.2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5Z"/><circle cx="12" cy="12.8" r="3.4"/></svg>';
+  '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="m7.5 16 3-3.5 2.2 2.3 1.6-1.6 2.2 2.8"/><circle cx="14.5" cy="9" r="1.2"/></svg>';
 const btn = el<HTMLButtonElement>("btn-capture");
 btn.innerHTML = ICONE;
 let occupe = false;

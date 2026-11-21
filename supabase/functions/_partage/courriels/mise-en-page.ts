@@ -3,7 +3,7 @@
 // texte d'aperçu caché ; version texte brut. Même principe que les e-mails PaceApp.
 
 export const SITE = "https://nexbim.paceapp.fr/";
-export const CONTACT = "contact@paceapp.fr";
+export const CONTACT = "nexbim@paceapp.fr";
 
 const POLICE = "'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 export const COULEURS = {

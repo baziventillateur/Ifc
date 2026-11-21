@@ -661,11 +661,92 @@ function focale35(buf: ArrayBuffer): number | null {
   return null;
 }
 
-let champPhoto: HTMLInputElement | null = null;
+// Appareil photo intégré : la caméra du téléphone s'affiche dans NexBim. On ne passe pas
+// par l'appli photo du téléphone : Android fermait alors NexBim en arrière-plan (mémoire)
+// et la page se rechargeait au retour, photo perdue et visite interrompue.
+let flux: MediaStream | null = null;
 
-/** Visite : ouvre l'appareil photo ; la photo est rangée au point de vue actuel. */
-export function prendrePhoto() {
-  // Le point de vue est noté au moment du toucher (avant de passer à l'appareil photo).
+function arreterFlux() {
+  for (const t of flux?.getTracks() ?? []) t.stop();
+  flux = null;
+}
+
+/** Visite : prend une photo du chantier, rangée au point de vue du déclenchement. */
+export async function prendrePhoto() {
+  if (flux) return;
+  if (!navigator.mediaDevices?.getUserMedia) return photoParFichier();
+  try {
+    flux = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 4096 }, height: { ideal: 3072 } },
+    });
+  } catch (e) {
+    arreterFlux();
+    const refus = (e as Error)?.name === "NotAllowedError";
+    alerte(
+      refus
+        ? "Accès à la caméra refusé : autorisez-le pour nexbim.paceapp.fr dans les réglages du navigateur."
+        : "Caméra indisponible ici.",
+      5000,
+    );
+    return;
+  }
+  const ecran = cree("div", "appareil");
+  const video = cree("video", "appareil-video");
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.srcObject = flux;
+  const aide = cree("div", "appareil-aide", "Visez dans la direction de la vue, puis déclenchez.");
+  const barre = cree("div", "appareil-barre");
+  const declencheur = bouton("appareil-declencheur", "", () => void declencher(), "Prendre la photo");
+  barre.append(bouton("visite-puce", "Annuler", fermer), declencheur, cree("span", "appareil-vide"));
+  ecran.append(video, aide, barre);
+  document.body.append(ecran);
+  void video.play().catch(() => undefined);
+
+  function fermer() {
+    arreterFlux();
+    ecran.remove();
+  }
+
+  async function declencher() {
+    if (!flux) return;
+    // Le point de vue est celui du déclenchement (au gyroscope, la vue suit le téléphone).
+    const vue = vueActuelle();
+    declencheur.disabled = true;
+    ecran.classList.add("eclair");
+    let photo: Blob | null = null;
+    const piste = flux.getVideoTracks()[0];
+    const Capture = (window as unknown as { ImageCapture?: new (t: MediaStreamTrack) => { takePhoto(): Promise<Blob> } })
+      .ImageCapture;
+    if (Capture && piste) {
+      try {
+        // Pleine définition du capteur (et souvent les données EXIF avec la focale).
+        photo = await new Capture(piste).takePhoto();
+      } catch {
+        photo = null;
+      }
+    }
+    if (!photo && video.videoWidth) {
+      const c = cree("canvas");
+      c.width = video.videoWidth;
+      c.height = video.videoHeight;
+      c.getContext("2d")!.drawImage(video, 0, 0);
+      photo = await versBlob(c, 0.9);
+    }
+    fermer();
+    if (!photo) return alerte("La photo n'a pas pu être prise.", 3500);
+    await rangerPhoto(photo, vue).catch((e) => {
+      console.error("Photo", e);
+      alerte("La photo n'a pas pu être enregistrée.", 3500);
+    });
+  }
+}
+
+/** Secours (navigateur sans accès direct à la caméra) : l'appli photo du téléphone. */
+let champPhoto: HTMLInputElement | null = null;
+function photoParFichier() {
   const vue = vueActuelle();
   if (!champPhoto) {
     champPhoto = cree("input");
@@ -688,10 +769,13 @@ export function prendrePhoto() {
   champ.click();
 }
 
-async function rangerPhoto(fichier: File, vue: Vue) {
-  vue.f35 = focale35(await fichier.slice(0, 256 * 1024).arrayBuffer()) ?? FOCALE_DEFAUT;
+async function rangerPhoto(fichier: Blob, vue: Vue) {
+  const exif = focale35(await fichier.slice(0, 256 * 1024).arrayBuffer());
   // L'orientation EXIF est appliquée au décodage (photo prise en portrait ou en paysage).
   const bitmap = await createImageBitmap(fichier, { imageOrientation: "from-image" } as ImageBitmapOptions);
+  // Sans EXIF : objectif principal (24 mm) ; une image 16:9 est recadrée en hauteur (≈ 26 mm).
+  const allonge = Math.max(bitmap.width, bitmap.height) / Math.min(bitmap.width, bitmap.height);
+  vue.f35 = exif ?? (allonge > 1.6 ? 26 : FOCALE_DEFAUT);
   const grande = reduire(bitmap, PHOTO_MAX);
   bitmap.close();
   const [image, petite] = await Promise.all([versBlob(grande, 0.85), versBlob(reduire(grande, VIGNETTE), 0.8)]);

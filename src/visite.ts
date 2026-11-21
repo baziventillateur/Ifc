@@ -83,7 +83,19 @@ document.body.append(panneau);
 
 // Bouton photo du chantier : rond orange au-dessus de la manette, visible pendant la marche
 // (même panneau replié). La photo est rangée à l'endroit où l'on est, dans la direction du regard.
-const btnPhoto = bouton("visite-photo", "", () => prendrePhoto(), "Photo du chantier, rangée à cet endroit de la maquette");
+const btnPhoto = bouton(
+  "visite-photo",
+  "",
+  () => {
+    // La caméra AR occupe l'objectif du téléphone : on l'arrête pour la photo.
+    if (arActif()) {
+      fermerAR();
+      alerte("Caméra AR arrêtée pour la photo : relancez-la ensuite.", 3500);
+    }
+    void prendrePhoto();
+  },
+  "Photo du chantier, rangée à cet endroit de la maquette",
+);
 btnPhoto.innerHTML =
   '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.2l1.5-2h5.6l1.5 2h2.2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5Z"/><circle cx="12" cy="12.8" r="3.4"/></svg><span>Photo</span>';
 btnPhoto.hidden = true;

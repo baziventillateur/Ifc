@@ -8,6 +8,7 @@ import "./fiche";
 import "./pivot";
 import "./navigation";
 import "./visite";
+import "./captures";
 import "./mise-a-jour";
 import "./boutons-historique";
 

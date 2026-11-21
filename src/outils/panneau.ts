@@ -1,5 +1,6 @@
 // Barre d'outils et panneau d'outil (à gauche sur ordinateur, en bas sur téléphone).
 import { ajusterDecalage, bouton, cree, el } from "../noyau";
+import { pleinEcranModifie } from "../plein-ecran";
 
 type Crochets = { ouvrir?: () => void; fermer?: () => void };
 type Outil = { id: string; titre: string; bouton: HTMLButtonElement; section: HTMLElement; crochets: Crochets };
@@ -22,6 +23,8 @@ function replier(oui: boolean) {
   requestAnimationFrame(() => ajusterDecalage());
 }
 btnReplier.addEventListener("click", () => replier(!panneau.classList.contains("replie")));
+// En passant en plein écran, le panneau ouvert se replie.
+pleinEcranModifie.on((plein) => plein && actif && replier(true));
 titre.addEventListener("click", () => replier(!panneau.classList.contains("replie")));
 
 // Fondu à droite quand la barre d'outils déborde (téléphone).

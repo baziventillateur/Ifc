@@ -3364,3 +3364,505 @@ a.projet-ligne {
     animation: none;
   }
 }
+
+/* --- Captures d'écran ---------------------------------------------------------------- */
+
+.btn-capture {
+  appearance: none;
+  position: fixed;
+  z-index: 11;
+  right: 168px;
+  top: calc(var(--haut-barre) + var(--haut-outils) + 8px);
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--bord);
+  border-radius: 50%;
+  background: var(--panneau-plein);
+  color: var(--doux);
+  cursor: pointer;
+  padding: 0;
+}
+
+.btn-capture:active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Pas de plein écran possible (iPhone) : la capture prend sa place. */
+.btn-plein-ecran[hidden] + .btn-capture {
+  right: 128px;
+}
+
+@media (min-width: 820px) and (hover: hover) {
+  .btn-capture {
+    right: 128px;
+  }
+  .btn-plein-ecran[hidden] + .btn-capture {
+    right: 88px;
+  }
+}
+
+@media (max-width: 349px) {
+  .btn-capture {
+    right: 128px;
+  }
+  .btn-plein-ecran[hidden] + .btn-capture {
+    right: 88px;
+  }
+}
+
+.capture-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: #fff;
+  pointer-events: none;
+  animation: capture-flash 0.35s ease-out forwards;
+}
+
+@keyframes capture-flash {
+  from {
+    opacity: 0.75;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.capture-notif {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  top: calc(var(--haut-barre) + var(--haut-outils) + 52px);
+  transform: translate(-50%, -8px);
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(380px, calc(100vw - 16px));
+  padding: 6px 7px;
+  border: 1px solid var(--bord);
+  border-radius: 12px;
+  background: rgba(22, 27, 34, 0.97);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
+}
+
+.capture-notif.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.capture-notif-img {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+.capture-notif-texte {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--doux);
+}
+
+.capture-notif-texte strong {
+  color: var(--texte);
+  font-size: 13px;
+}
+
+.capture-notif-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.capture-notif-btn {
+  appearance: none;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--bord);
+  border-radius: 14px;
+  background: #232b35;
+  color: var(--texte);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.capture-notif-btn.principal {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #1b1206;
+}
+
+.capture-vol {
+  position: fixed;
+  z-index: 61;
+  border-radius: 7px;
+  object-fit: cover;
+  transform-origin: 0 0;
+  pointer-events: none;
+  transition:
+    transform 0.45s cubic-bezier(0.5, 0, 0.2, 1),
+    opacity 0.45s;
+}
+
+/* Onglet « Captures » contre le bord gauche, sous la liste des maquettes. */
+.captures-coin {
+  appearance: none;
+  pointer-events: auto;
+  align-self: flex-start;
+  margin-left: -9px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px 4px 10px;
+  border: 1px solid var(--bord);
+  border-left: 0;
+  border-radius: 0 9px 9px 0;
+  background: var(--panneau);
+  backdrop-filter: blur(8px);
+  color: var(--doux);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.captures-coin[hidden] {
+  display: none;
+}
+
+.captures-coin-img {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.captures-coin.a-traiter .captures-coin-nombre {
+  color: var(--accent);
+}
+
+.captures-coin.rebond {
+  animation: captures-rebond 0.4s ease;
+}
+
+@keyframes captures-rebond {
+  40% {
+    transform: scale(1.15);
+  }
+}
+
+.captures-fond {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.captures-boite {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(760px, 100vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 10px 10px calc(12px + env(safe-area-inset-bottom));
+  border: 1px solid var(--bord);
+  border-radius: 14px 14px 0 0;
+  background: var(--panneau-plein);
+}
+
+@media (min-width: 820px) {
+  .captures-fond {
+    align-items: center;
+  }
+  .captures-boite {
+    border-radius: 14px;
+  }
+}
+
+.captures-entete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.captures-entete > :nth-child(2) {
+  margin-left: auto;
+}
+
+.captures-entete strong {
+  font-size: 14px;
+}
+
+.captures-grille {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.captures-vide,
+.captures-note {
+  color: var(--doux);
+  font-size: 12px;
+  margin: 4px 2px;
+}
+
+.capture-carte {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 6px;
+  border: 1px solid var(--bord);
+  border-radius: 9px;
+  background: #1b222b;
+  color: var(--texte);
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.capture-carte img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #11161c;
+}
+
+.capture-carte-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  min-width: 0;
+}
+
+.capture-carte-date {
+  color: var(--doux);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.capture-carte-message {
+  padding: 0 6px;
+  font-size: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.capture-statut {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.capture-statut.a_traiter {
+  background: #3a2a14;
+  border-color: rgba(255, 138, 31, 0.5);
+  color: var(--accent);
+}
+
+.capture-statut.traite {
+  background: #1d6b41;
+  border-color: #2f9e5f;
+  color: #e3ffec;
+}
+
+button.capture-statut.grand {
+  appearance: none;
+  align-self: flex-start;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.capture-grande {
+  width: 100%;
+  max-height: 48vh;
+  object-fit: contain;
+  border-radius: 9px;
+  background: #11161c;
+  cursor: crosshair;
+}
+
+.capture-message {
+  width: 100%;
+  resize: vertical;
+}
+
+.capture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.visite-puce.danger {
+  color: #ff8f8f;
+}
+
+/* Éditeur d'annotation : plein écran, dessin au doigt. */
+.annoter {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  background: #0d1116;
+}
+
+.annoter-zone {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+.annoter-toile {
+  touch-action: none;
+  border-radius: 6px;
+  cursor: crosshair;
+}
+
+.annoter-barre {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--bord);
+}
+
+.annoter-couleurs {
+  display: flex;
+  gap: 8px;
+}
+
+.annoter-couleur {
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+
+.annoter-couleur.actif {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(255, 138, 31, 0.8);
+}
+
+/* --- Plein écran : barres du haut masquées, « NexBim ▾ » discret pour les rouvrir ---- */
+
+body.plein-ecran:not(.menu-visible) {
+  --haut-barre: 0px;
+  --haut-outils: 22px;
+}
+
+body.plein-ecran:not(.menu-visible) .barre,
+body.plein-ecran:not(.menu-visible) .outils {
+  display: none;
+}
+
+.poignee-menu {
+  appearance: none;
+  display: none;
+  position: fixed;
+  z-index: 12;
+  left: 50%;
+  top: env(safe-area-inset-top);
+  transform: translateX(-50%);
+  height: 22px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+}
+
+.poignee-menu span {
+  font-size: 10px;
+}
+
+body.plein-ecran .poignee-menu {
+  display: flex;
+}
+
+body.plein-ecran.menu-visible .poignee-menu {
+  top: calc(var(--haut-barre) + var(--haut-outils) + env(safe-area-inset-top));
+  background: var(--panneau);
+  border-radius: 0 0 9px 9px;
+  border: 1px solid var(--bord);
+  border-top: 0;
+}
+
+/* Téléphone étroit : la capture passe sous la rangée de boutons ronds. */
+@media (max-width: 419px) and (min-width: 350px) {
+  .btn-capture,
+  .btn-plein-ecran[hidden] + .btn-capture {
+    right: 88px;
+    top: calc(var(--haut-barre) + var(--haut-outils) + 50px);
+  }
+}
+
+/* Téléphone à l'horizontale : rien en haut, pour gagner toute la hauteur. « NexBim ▾ »
+   reste en surimpression, discret, pour rouvrir le menu. */
+body.paysage:not(.menu-visible) {
+  --haut-barre: 0px;
+  --haut-outils: 0px;
+}
+
+body.paysage:not(.menu-visible) .barre,
+body.paysage:not(.menu-visible) .outils {
+  display: none;
+}
+
+body.paysage .poignee-menu {
+  display: flex;
+}
+
+body.paysage.menu-visible .poignee-menu {
+  top: calc(var(--haut-barre) + var(--haut-outils) + env(safe-area-inset-top));
+  background: var(--panneau);
+  border-radius: 0 0 9px 9px;
+  border: 1px solid var(--bord);
+  border-top: 0;
+}

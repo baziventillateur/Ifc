@@ -16,7 +16,7 @@ import { angleDeVisite, bloquerUnDoigt, definirOeil, definirRegardExterne, defin
 import { estAdmin, hauteurTelephone } from "./nuage/projets";
 import { replierCalques } from "./maquettes";
 import { activerAvancement } from "./avancement";
-import { inviterPleinEcran } from "./plein-ecran";
+import { inviterPleinEcran, pleinEcranModifie } from "./plein-ecran";
 import {
   arActif,
   arPossible,
@@ -74,6 +74,8 @@ function replierPanneau(oui: boolean) {
   btnReplier.setAttribute("aria-expanded", String(!oui));
 }
 titre.addEventListener("click", () => replierPanneau(!panneau.classList.contains("replie")));
+// En passant en plein écran pendant la marche, le panneau se replie.
+pleinEcranModifie.on((plein) => plein && actif && etape === "marche" && replierPanneau(true));
 entete.append(titre, etatGps, btnReplier, fermer);
 panneau.append(entete, texte, actions);
 document.body.append(panneau);
@@ -835,64 +837,83 @@ async function finirGeste(g: Geste, e: PointerEvent) {
   await entrerEnMarche(dir.lengthSq() > 1e-6 ? dir.normalize() : dirDefaut(r.p));
 }
 
-// --- Animation d'entrée : la vue plonge jusqu'à hauteur d'yeux -------------------------
-// Courbe depuis la vue de dessus vers l'œil (en arrivant par l'arrière), regard qui se
-// redresse, murs qui « poussent » (la coupe du plan monte) et angle de vue qui s'élargit.
+// --- Animation d'entrée, comme dans un jeu vidéo ------------------------------------------
+// 1. Recul : la caméra prend un peu de champ en s'élargissant à 120°.
+// 2. Élan : elle fonce vers l'œil en arrivant par l'arrière, très vite au début, puis
+//    ralentit franchement juste avant de s'arrêter ; le regard se redresse, les murs
+//    « poussent » (la coupe du plan monte) et l'angle revient à celui de la visite.
 
 let enAnimation = false;
-const adoucir = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const sortieCubique = (t: number) => 1 - Math.pow(1 - t, 3);
+const sortieQuartique = (t: number) => 1 - Math.pow(1 - t, 4);
+const entreeSortie = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const palier = (a: number, b: number, t: number) => THREE.MathUtils.clamp((t - a) / (b - a), 0, 1);
 
 function plonger(oeil: THREE.Vector3, dir: THREE.Vector3) {
   const p0 = controles.getPosition(new THREE.Vector3());
   const t0 = controles.getTarget(new THREE.Vector3());
   const cible = oeil.clone().addScaledVector(dir, 3);
-  const hauteur = Math.max(4, p0.y - oeil.y);
-  // Point de passage : au-dessus et un peu en arrière de l'œil.
-  const recul = Math.min(10, 2 + hauteur * 0.12);
-  const passage = new THREE.Vector3(oeil.x - dir.x * recul, oeil.y + Math.min(30, hauteur * 0.3), oeil.z - dir.z * recul);
+  // Recul : dans l'axe de la vue, un peu plus haut.
+  const axe = p0.clone().sub(t0);
+  const loin = Math.max(1, axe.length());
+  axe.normalize();
+  const p1 = p0.clone().addScaledVector(axe, Math.max(2, loin * 0.18));
+  p1.y += Math.min(6, loin * 0.05);
+  // Élan : courbe qui passe au-dessus et en arrière de l'œil.
+  const hauteur = Math.max(4, p1.y - oeil.y);
+  const derriere = Math.min(9, 2.5 + hauteur * 0.1);
+  const passage = new THREE.Vector3(oeil.x - dir.x * derriere, oeil.y + Math.min(14, hauteur * 0.22), oeil.z - dir.z * derriere);
   const persp = monde.camera.threePersp;
   const fov0 = persp.fov;
-  const fov1 = angleDeVisite();
+  const fovElan = 120;
+  const fovFin = angleDeVisite();
   const coupe = monde.renderer!.clippingPlanes.includes(planCoupe);
   const coupe0 = planCoupe.constant;
-  const duree = 1400;
+  const RECUL = 380;
+  const ELAN = 880;
   const pos = new THREE.Vector3();
   const vise = new THREE.Vector3();
   enAnimation = true;
   controles.enabled = false;
   return new Promise<void>((fin) => {
     const debut = performance.now();
+    const arreter = () => {
+      enAnimation = false;
+      controles.enabled = true;
+      fin();
+    };
     const image = (t: number) => {
-      if (!actif) {
-        enAnimation = false;
-        controles.enabled = true;
-        fin();
-        return;
+      if (!actif) return arreter();
+      const ecoule = t - debut;
+      if (ecoule < RECUL) {
+        const k = sortieCubique(ecoule / RECUL);
+        pos.copy(p0).lerp(p1, k);
+        void controles.setLookAt(pos.x, pos.y, pos.z, t0.x, t0.y, t0.z, false);
+        persp.fov = fov0 + (fovElan - fov0) * k;
+      } else {
+        const u = Math.min(1, (ecoule - RECUL) / ELAN);
+        const e = sortieQuartique(u);
+        const a = (1 - e) * (1 - e);
+        const b = 2 * (1 - e) * e;
+        const c = e * e;
+        pos.set(
+          p1.x * a + passage.x * b + oeil.x * c,
+          p1.y * a + passage.y * b + oeil.y * c,
+          p1.z * a + passage.z * b + oeil.z * c,
+        );
+        // Le regard se redresse un peu avant l'arrivée.
+        vise.copy(t0).lerp(cible, entreeSortie(palier(0, 0.8, u)));
+        void controles.setLookAt(pos.x, pos.y, pos.z, vise.x, vise.y, vise.z, false);
+        persp.fov = fovElan + (fovFin - fovElan) * entreeSortie(palier(0.55, 1, u));
+        if (coupe) planCoupe.constant = coupe0 + 3.5 * sortieCubique(palier(0, 0.75, u));
+        opaciteMarqueur(1 - palier(0, 0.35, u));
+        if (u >= 1) {
+          persp.updateProjectionMatrix();
+          return arreter();
+        }
       }
-      const k = Math.min(1, (t - debut) / duree);
-      const e = adoucir(k);
-      const a = (1 - e) * (1 - e);
-      const b = 2 * (1 - e) * e;
-      const c = e * e;
-      pos.set(
-        p0.x * a + passage.x * b + oeil.x * c,
-        p0.y * a + passage.y * b + oeil.y * c,
-        p0.z * a + passage.z * b + oeil.z * c,
-      );
-      // Le regard se redresse un peu en avance sur la descente.
-      vise.copy(t0).lerp(cible, adoucir(palier(0, 0.85, k)));
-      void controles.setLookAt(pos.x, pos.y, pos.z, vise.x, vise.y, vise.z, false);
-      persp.fov = fov0 + (fov1 - fov0) * adoucir(palier(0.3, 1, k));
       persp.updateProjectionMatrix();
-      if (coupe) planCoupe.constant = coupe0 + 3.5 * adoucir(palier(0.15, 0.9, k));
-      opaciteMarqueur(1 - palier(0.35, 0.7, k));
-      if (k < 1) requestAnimationFrame(image);
-      else {
-        enAnimation = false;
-        controles.enabled = true;
-        fin();
-      }
+      requestAnimationFrame(image);
     };
     requestAnimationFrame(image);
   });
@@ -1199,6 +1220,10 @@ async function quitter() {
 }
 
 btnVisite.addEventListener("click", () => void (actif ? quitter() : demarrer()));
+
+/** Pour les autres outils (captures : revenir à un point de vue). */
+export const visiteActive = () => actif;
+export const quitterVisite = () => quitter();
 window.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !actif) return;
   const cible = e.target as HTMLElement | null;

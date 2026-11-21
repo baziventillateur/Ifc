@@ -331,6 +331,9 @@ async function mettreANiveau(f: Fichier, ifc?: File) {
 /** Émis quand un projet vient d'être ouvert : son identifiant, ou null (maquette d'essai). */
 export const projetCharge = new Signal<string | null>();
 
+/** Prénom de la personne connectée (sinon son e-mail), pour signer captures et remarques. */
+export const monPrenom = () => etat.moi.prenom || etat.moi.email.split("@")[0] || "";
+
 /** Administrateur connecté (fonctions en essai, réservées pour l'instant). */
 export const estAdmin = () => etat.admin;
 

@@ -33,7 +33,22 @@ import { modeClicActif, viser } from "./fiche";
 import { suspendreEffets } from "./effets";
 import { definirPhotosDuPlan } from "./plan";
 import { nuage } from "./nuage/client";
-import { monPrenom, projetCharge } from "./nuage/projets";
+import { monEmail, monId, monPrenom, nomProjetCourant, projetCharge } from "./nuage/projets";
+import {
+  INSCRIPTION_PACE,
+  comptePace,
+  connecterPace,
+  creerBlocNotes,
+  creerNotePace,
+  creerSection,
+  deconnecterPace,
+  dossiersPace,
+  envoyerImagePace,
+  lienNotePace,
+  messagePace,
+  sectionParDefaut,
+  type DossierPace,
+} from "./paceapp";
 import { quitterVisite, suspendreVisite, visiteActive } from "./visite";
 
 type Statut = "a_traiter" | "traite";
@@ -42,6 +57,8 @@ type Vue = { p: number[]; c: number[]; ortho: boolean; fov: number; f35?: number
 type Capture = {
   id: string;
   genre: "capture" | "photo";
+  /** Compte de l'auteur (absent sur la maquette d'essai). */
+  auteur?: string | null;
   auteur_nom: string;
   cree_le: string;
   message: string;
@@ -299,6 +316,67 @@ let fond: HTMLElement | null = null;
 let boite: HTMLElement | null = null;
 let filtre: "a_traiter" | "toutes" = "toutes";
 let detail: string | null = null;
+/** Filtres de la galerie : période (aujourd'hui, 7 jours, ce mois, ou un mois « AAAA-MM »), auteur, type. */
+let periode = "tout";
+let auteurFiltre = "tous";
+let genreFiltre: "tout" | "photo" | "capture" = "tout";
+/** Sélection en cours (mode « Sélectionner »), pour l'export vers PaceApp. */
+let choix: Set<string> | null = null;
+/** Étape de l'export vers PaceApp, affichée à la place de la galerie. */
+let exportPace: null | { etape: "compte" | "destination" | "envoi" | "fin"; texte?: string; note?: string; ou?: string; erreur?: string } = null;
+
+const moisDe = (iso: string) => iso.slice(0, 7);
+const NOMS_MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+const libelleMois = (m: string) => `${NOMS_MOIS[Number(m.slice(5, 7)) - 1] ?? m} ${m.slice(0, 4)}`;
+const estDeMoi = (c: Capture) => (c.auteur ? c.auteur === monId() : !!c.locale || c.auteur_nom === monPrenom());
+
+/** Captures visibles avec les filtres choisis. */
+function capturesFiltrees() {
+  const maintenant = new Date();
+  const debutJour = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate()).getTime();
+  return captures.filter((c) => {
+    if (filtre === "a_traiter" && c.statut !== "a_traiter") return false;
+    if (genreFiltre !== "tout" && c.genre !== genreFiltre) return false;
+    if (auteurFiltre === "moi" && !estDeMoi(c)) return false;
+    if (auteurFiltre.startsWith("a:") && (c.auteur ?? "nom:" + c.auteur_nom) !== auteurFiltre.slice(2)) return false;
+    const t = new Date(c.cree_le).getTime();
+    if (periode === "jour" && t < debutJour) return false;
+    if (periode === "semaine" && t < debutJour - 6 * 86400e3) return false;
+    if (periode === "mois" && moisDe(c.cree_le) !== moisDe(maintenant.toISOString())) return false;
+    if (/^\d{4}-\d{2}$/.test(periode) && moisDe(c.cree_le) !== periode) return false;
+    return true;
+  });
+}
+
+function menuFiltre(libelle: string, valeur: string, options: [string, string][], changer: (v: string) => void) {
+  const m = cree("select", "captures-filtre" + (valeur !== options[0][0] ? " actif" : ""));
+  m.setAttribute("aria-label", libelle);
+  m.title = libelle;
+  for (const [v, t] of options) {
+    const o = cree("option", "", t);
+    o.value = v;
+    o.selected = v === valeur;
+    m.append(o);
+  }
+  m.addEventListener("change", () => {
+    changer(m.value);
+    majGalerie();
+  });
+  return m;
+}
+
+function barreFiltres() {
+  const barre = cree("div", "captures-filtres");
+  const mois = [...new Set(captures.map((c) => moisDe(c.cree_le)))].sort().reverse();
+  const auteurs = new Map<string, string>();
+  for (const c of captures) if (!estDeMoi(c)) auteurs.set(c.auteur ?? "nom:" + c.auteur_nom, c.auteur_nom || "Sans nom");
+  barre.append(
+    menuFiltre("Période", periode, [["tout", "Toutes dates"], ["jour", "Aujourd'hui"], ["semaine", "7 derniers jours"], ["mois", "Ce mois-ci"], ...mois.map((m): [string, string] => [m, libelleMois(m)])], (v) => (periode = v)),
+    menuFiltre("Auteur", auteurFiltre, [["tous", "Tous les auteurs"], ["moi", "Moi"], ...[...auteurs].map(([k, n]): [string, string] => ["a:" + k, n])], (v) => (auteurFiltre = v)),
+    menuFiltre("Type", genreFiltre, [["tout", "Photos et captures"], ["photo", "Photos"], ["capture", "Captures"]], (v) => (genreFiltre = v as typeof genreFiltre)),
+  );
+  return barre;
+}
 
 function ouvrirGalerie(id?: string, focus?: "message") {
   if (!fond) {
@@ -320,11 +398,21 @@ function fermerGalerie() {
   fond?.remove();
   fond = boite = null;
   detail = null;
+  // Un envoi en cours continue : son résultat s'affichera à la prochaine ouverture.
+  if (exportPace?.etape !== "envoi") {
+    exportPace = null;
+    choix = null;
+  }
 }
 
 window.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !fond) return;
-  if (detail) {
+  if (exportPace) {
+    if (exportPace.etape !== "envoi") quitterExport(exportPace.etape !== "fin");
+  } else if (choix) {
+    choix = null;
+    majGalerie();
+  } else if (detail) {
     detail = null;
     majGalerie();
   } else fermerGalerie();
@@ -333,19 +421,43 @@ window.addEventListener("keydown", (e) => {
 function majGalerie(focus?: "message") {
   majCoin();
   if (!boite) return;
+  if (exportPace) return dessinerExport();
   const cap = detail ? captures.find((c) => c.id === detail) : undefined;
   if (detail && cap) return dessinerDetail(cap, focus);
   detail = null;
   const entete = cree("div", "captures-entete");
   const aTraiter = captures.filter((c) => c.statut === "a_traiter").length;
-  entete.append(
-    cree("strong", "", `Captures · ${captures.length}`),
-    bouton("visite-puce" + (filtre === "a_traiter" ? " actif" : ""), `À traiter · ${aTraiter}`, () => {
-      filtre = filtre === "a_traiter" ? "toutes" : "a_traiter";
-      majGalerie();
-    }),
-    bouton("fermer", "✕", fermerGalerie, "Fermer"),
-  );
+  const liste = capturesFiltrees();
+  if (choix) {
+    for (const id of choix) if (!captures.some((c) => c.id === id)) choix.delete(id);
+    const tous = liste.length > 0 && liste.every((c) => choix!.has(c.id));
+    entete.append(
+      cree("strong", "", `${choix.size} sélectionnée${choix.size > 1 ? "s" : ""}`),
+      bouton("visite-puce", tous ? "Aucune" : `Tout (${liste.length})`, () => {
+        for (const c of liste) {
+          if (tous) choix!.delete(c.id);
+          else choix!.add(c.id);
+        }
+        majGalerie();
+      }, tous ? "Tout désélectionner" : "Sélectionner toutes les captures affichées"),
+      bouton("visite-puce", "Annuler", () => {
+        choix = null;
+        majGalerie();
+      }),
+    );
+  } else {
+    entete.append(
+      cree("strong", "", `Captures · ${captures.length}`),
+      bouton("visite-puce" + (filtre === "a_traiter" ? " actif" : ""), `À traiter · ${aTraiter}`, () => {
+        filtre = filtre === "a_traiter" ? "toutes" : "a_traiter";
+        majGalerie();
+      }),
+      ...(captures.length
+        ? [bouton("visite-puce", "Sélectionner", () => ((choix = new Set()), majGalerie()), "Choisir des captures, par exemple pour les exporter vers PaceApp")]
+        : []),
+      bouton("fermer", "✕", fermerGalerie, "Fermer"),
+    );
+  }
   const nbPhotos = captures.filter((c) => c.genre === "photo").length;
   const options = cree("div", "captures-options");
   if (nbPhotos) {
@@ -368,13 +480,23 @@ function majGalerie(focus?: "message") {
     );
   }
   const grille = cree("div", "captures-grille");
-  const liste = captures.filter((c) => filtre === "toutes" || c.statut === "a_traiter");
   if (!liste.length) {
-    grille.append(cree("p", "captures-vide", captures.length ? "Tout est traité." : "Aucune capture pour l'instant."));
+    grille.append(
+      cree(
+        "p",
+        "captures-vide",
+        !captures.length ? "Aucune capture pour l'instant." : filtre === "a_traiter" && periode === "tout" && auteurFiltre === "tous" && genreFiltre === "tout" ? "Tout est traité." : "Aucune capture avec ces filtres.",
+      ),
+    );
   }
   for (const c of liste) {
-    const carte = cree("button", "capture-carte");
+    const pris = choix?.has(c.id) ?? false;
+    const carte = cree("button", "capture-carte" + (choix ? " a-choisir" : "") + (pris ? " choisie" : ""));
     carte.type = "button";
+    if (choix) {
+      carte.setAttribute("aria-pressed", String(pris));
+      carte.append(cree("span", "capture-coche", pris ? "✓" : ""));
+    }
     const img = cree("img");
     img.alt = "";
     img.loading = "lazy";
@@ -389,15 +511,262 @@ function majGalerie(focus?: "message") {
     carte.append(img, info);
     if (c.message) carte.append(cree("span", "capture-carte-message", c.message));
     carte.addEventListener("click", () => {
-      detail = c.id;
+      if (choix) {
+        if (choix.has(c.id)) choix.delete(c.id);
+        else choix.add(c.id);
+      } else detail = c.id;
       majGalerie();
     });
     grille.append(carte);
   }
-  boite.replaceChildren(entete, ...(nbPhotos ? [options] : []), grille);
-  if (projet === null && captures.length) {
-    boite.append(cree("p", "captures-note", "Maquette d'essai : les captures restent sur cet écran."));
+  const pied: HTMLElement[] = [];
+  if (choix) {
+    const barre = cree("div", "captures-pied");
+    const exporter = bouton("btn principal", `Exporter vers PaceApp${choix.size ? ` (${choix.size})` : ""}`, () => commencerExport());
+    exporter.disabled = !choix.size;
+    barre.append(cree("span", "captures-pied-aide", "Touchez les captures à exporter"), exporter);
+    pied.push(barre);
   }
+  const note = projet === null && captures.length ? [cree("p", "captures-note", "Maquette d'essai : les captures restent sur cet écran.")] : [];
+  boite.replaceChildren(entete, ...(captures.length ? [barreFiltres()] : []), ...(nbPhotos && !choix ? [options] : []), grille, ...note, ...pied);
+}
+
+// --- Export vers PaceApp ---------------------------------------------------------------------
+// Les captures choisies partent dans une nouvelle note PaceApp (images en pleine définition,
+// annotations comprises, avec leur message, leur statut, la date et l'auteur).
+
+const MAX_EXPORT = 30; // PaceApp accepte 30 images par 10 minutes et par compte.
+const CLE_DESTINATION = "nexbim-paceapp-destination";
+let dossiers: DossierPace[] | null = null;
+
+function commencerExport() {
+  if (!choix?.size) return;
+  if (choix.size > MAX_EXPORT) return alerte(`${MAX_EXPORT} captures au plus par export (limite de PaceApp) : exportez en plusieurs fois.`, 4500);
+  exportPace = { etape: comptePace() ? "destination" : "compte" };
+  dossiers = null;
+  majGalerie();
+}
+
+function quitterExport(garderChoix = true) {
+  exportPace = null;
+  if (!garderChoix) choix = null;
+  majGalerie();
+}
+
+const echapper = (t: string) => t.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
+function dessinerExport() {
+  if (!boite || !exportPace) return;
+  const n = choix?.size ?? 0;
+  const entete = cree("div", "captures-entete");
+  entete.append(
+    exportPace.etape === "envoi" ? cree("span") : bouton("visite-puce", "‹ Retour", () => quitterExport(exportPace?.etape !== "fin")),
+    cree("strong", "", "Exporter vers PaceApp"),
+    bouton("fermer", "✕", () => (exportPace?.etape === "envoi" ? undefined : quitterExport(exportPace?.etape !== "fin")), "Fermer"),
+  );
+  const corps = cree("div", "pace-export");
+  const e = exportPace;
+  if (e.etape === "compte") {
+    corps.append(
+      cree("p", "", `Les ${n} image${n > 1 ? "s" : ""} choisie${n > 1 ? "s" : ""} seront ajoutées dans une nouvelle note de votre compte PaceApp, l'appli de notes du groupe.`),
+      cree("p", "pace-export-doux", "Une fenêtre PaceApp s'ouvre : connectez-vous (de préférence avec le même e-mail que NexBim), puis touchez « Autoriser »."),
+    );
+    const connexion = bouton("btn principal", "Se connecter à PaceApp", async () => {
+      connexion.disabled = true;
+      connexion.textContent = "En attente de PaceApp…";
+      try {
+        await connecterPace();
+        exportPace = { etape: "destination" };
+      } catch (err) {
+        exportPace = { etape: "compte", erreur: messagePace(err) };
+      }
+      majGalerie();
+    });
+    const inscription = cree("a", "btn", "Créer un compte PaceApp");
+    inscription.href = INSCRIPTION_PACE;
+    inscription.target = "_blank";
+    inscription.rel = "noopener";
+    const actions = cree("div", "pace-export-actions");
+    actions.append(connexion, inscription);
+    corps.append(actions, cree("p", "pace-export-doux", "Pas encore de compte ? Créez-le (gratuit), confirmez votre e-mail, puis revenez ici pour vous connecter."));
+  } else if (e.etape === "destination") {
+    dessinerDestination(corps, n);
+  } else if (e.etape === "envoi") {
+    const barre = cree("div", "pace-export-barre");
+    barre.append(cree("span"));
+    corps.append(cree("p", "", e.texte ?? "Envoi…"), barre);
+  } else {
+    const lien = cree("a", "btn principal", "Ouvrir dans PaceApp");
+    lien.href = lienNotePace(e.note ?? "");
+    lien.target = "_blank";
+    lien.rel = "noopener";
+    const actions = cree("div", "pace-export-actions");
+    actions.append(lien, bouton("btn", "Terminé", () => quitterExport(false)));
+    corps.append(cree("p", "pace-export-ok", `✓ Note créée${e.ou ? ` dans ${e.ou}` : ""}.`), actions);
+  }
+  if (e.erreur) corps.append(cree("p", "pace-export-erreur", e.erreur));
+  boite.replaceChildren(entete, corps);
+}
+
+function dessinerDestination(corps: HTMLElement, n: number) {
+  const compte = comptePace();
+  const ligneCompte = cree("p", "pace-export-doux");
+  ligneCompte.append(`Compte PaceApp : ${compte?.email ?? "?"}`);
+  if (compte?.email && monEmail() && compte.email.toLowerCase() !== monEmail().toLowerCase()) ligneCompte.append(" (autre e-mail que NexBim)");
+  ligneCompte.append(" · ");
+  const changer = cree("button", "lien", "Changer de compte");
+  changer.type = "button";
+  changer.addEventListener("click", () => {
+    deconnecterPace();
+    exportPace = { etape: "compte" };
+    majGalerie();
+  });
+  ligneCompte.append(changer);
+  corps.append(ligneCompte);
+  if (!dossiers) {
+    corps.append(cree("p", "pace-export-doux", "Lecture de vos blocs-notes…"));
+    void dossiersPace()
+      .then((d) => {
+        dossiers = d;
+        if (exportPace?.etape === "destination") majGalerie();
+      })
+      .catch((err) => {
+        if (/JWT|jwt|NON_CONNECTE|401/.test(String(err))) deconnecterPace();
+        exportPace = { etape: comptePace() ? "destination" : "compte", erreur: messagePace(err) };
+        dossiers = [];
+        majGalerie();
+      });
+    return;
+  }
+  const blocs = dossiers.filter((d) => d.kind === "notebook");
+  let memo: { bloc?: string; section?: string } = {};
+  try {
+    memo = JSON.parse(localStorage.getItem(CLE_DESTINATION) ?? "{}");
+  } catch {
+    // Pas de mémoire.
+  }
+  const projetNom = nomProjetCourant() || "Maquette d'essai";
+  const titre = cree("input", "champ");
+  titre.maxLength = 300;
+  titre.value = `NexBim · ${projetNom} · ${new Date().toLocaleDateString("fr-FR")}`;
+
+  const choixBloc = cree("select", "champ");
+  const choixSection = cree("select", "champ");
+  const nouveauBloc = cree("input", "champ");
+  nouveauBloc.placeholder = "Nom du nouveau bloc-notes";
+  nouveauBloc.value = "NexBim";
+  const nouvelleSection = cree("input", "champ");
+  nouvelleSection.placeholder = "Nom de la nouvelle section";
+  nouvelleSection.value = projetNom;
+  const option = (v: string, t: string) => {
+    const o = cree("option", "", t);
+    o.value = v;
+    return o;
+  };
+  choixBloc.append(option("", "Par défaut (Notes rapides)"), ...blocs.map((b) => option(b.id, b.name || "Sans nom")), option("+", "+ Nouveau bloc-notes…"));
+  choixBloc.value = memo.bloc && (memo.bloc === "" || blocs.some((b) => b.id === memo.bloc)) ? memo.bloc : "";
+  const majSections = () => {
+    const bloc = choixBloc.value;
+    nouveauBloc.hidden = bloc !== "+";
+    choixSection.replaceChildren();
+    if (bloc === "" ) {
+      choixSection.append(option("", "Notes rapides"));
+      choixSection.disabled = true;
+    } else {
+      choixSection.disabled = false;
+      // Sections du bloc-notes, y compris celles rangées dans un groupe.
+      const groupes = new Set(dossiers!.filter((d) => d.kind === "group" && d.parent_id === bloc).map((d) => d.id));
+      const sections = bloc === "+" ? [] : dossiers!.filter((d) => d.kind === "section" && (d.parent_id === bloc || groupes.has(d.parent_id ?? "")));
+      choixSection.append(...sections.map((s) => option(s.id, s.name || "Sans nom")), option("+", "+ Nouvelle section…"));
+      choixSection.value = memo.section && sections.some((s) => s.id === memo.section) ? memo.section : sections[0]?.id ?? "+";
+    }
+    nouvelleSection.hidden = choixSection.value !== "+";
+  };
+  choixBloc.addEventListener("change", majSections);
+  choixSection.addEventListener("change", () => (nouvelleSection.hidden = choixSection.value !== "+"));
+  majSections();
+
+  const champ = (libelle: string, ...el: HTMLElement[]) => {
+    const l = cree("label", "pace-export-champ");
+    l.append(cree("span", "", libelle), ...el);
+    return l;
+  };
+  const exporter = bouton("btn principal", `Exporter ${n} image${n > 1 ? "s" : ""}`, () =>
+    void envoyerVersPace({
+      titre: titre.value.trim() || "NexBim",
+      bloc: choixBloc.value,
+      section: choixSection.value,
+      nouveauBloc: nouveauBloc.value.trim() || "NexBim",
+      nouvelleSection: nouvelleSection.value.trim() || projetNom,
+    }),
+  );
+  const actions = cree("div", "pace-export-actions");
+  actions.append(exporter, bouton("btn", "Annuler", () => quitterExport()));
+  corps.append(champ("Titre de la note", titre), champ("Bloc-notes", choixBloc, nouveauBloc), champ("Section", choixSection, nouvelleSection), actions);
+}
+
+async function envoyerVersPace(o: { titre: string; bloc: string; section: string; nouveauBloc: string; nouvelleSection: string }) {
+  const liste = captures.filter((c) => choix?.has(c.id));
+  if (!liste.length) return;
+  const etape = (texte: string) => {
+    exportPace = { etape: "envoi", texte };
+    majGalerie();
+  };
+  try {
+    // 1. Où ranger la note.
+    etape("Préparation de la destination…");
+    let section = o.section;
+    let ou = "";
+    const nom = (id: string) => dossiers?.find((d) => d.id === id)?.name ?? "";
+    if (o.bloc === "") {
+      section = await sectionParDefaut();
+      ou = "Notes rapides";
+    } else {
+      let bloc = o.bloc;
+      if (bloc === "+") bloc = await creerBlocNotes(o.nouveauBloc);
+      if (section === "+" || o.bloc === "+") {
+        const freres = (dossiers ?? []).filter((d) => d.parent_id === bloc);
+        const position = Math.max(0, ...freres.map((d) => d.position ?? 0)) + 1024;
+        section = await creerSection(bloc, o.nouvelleSection, position);
+        ou = `${o.bloc === "+" ? o.nouveauBloc : nom(bloc)} › ${o.nouvelleSection}`;
+      } else ou = `${nom(bloc)} › ${nom(section)}`;
+    }
+    try {
+      localStorage.setItem(CLE_DESTINATION, JSON.stringify({ bloc: o.bloc === "+" ? "" : o.bloc, section: o.section === "+" ? "" : o.section }));
+    } catch {
+      // Sans mémoire.
+    }
+    // 2. Les images, une à une (pleine définition, annotations comprises).
+    const blocs: string[] = [];
+    for (const [i, c] of liste.entries()) {
+      etape(`Envoi des images ${i + 1} / ${liste.length}…`);
+      const u = await imageDe(c);
+      if (!u) throw new Error(`image introuvable (${dateCourte(c.cree_le)})`);
+      const image = await (await fetch(u)).blob();
+      const adresse = await envoyerImagePace(image, `nexbim-${c.cree_le.slice(0, 10)}.jpg`);
+      const quand = `${dateCourte(c.cree_le)} ${new Date(c.cree_le).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+      const dims = c.largeur && c.hauteur ? ` data-width="${c.largeur}" data-height="${c.hauteur}"` : "";
+      blocs.push(
+        `<h3>${c.genre === "photo" ? "📷 Photo" : "Capture"} · ${echapper(quand)}${c.auteur_nom ? " · " + echapper(c.auteur_nom) : ""}</h3>` +
+          `<p><img src="${adresse}"${dims} alt=""></p>` +
+          `<p><strong>Statut :</strong> ${libelleStatut(c.statut)}</p>` +
+          (c.message ? c.message.split(/\n+/).map((l) => `<p>${echapper(l)}</p>`).join("") : ""),
+      );
+    }
+    // 3. La note.
+    etape("Création de la note…");
+    const projetNom = nomProjetCourant() || "Maquette d'essai";
+    const html =
+      `<p>Exporté depuis <a href="https://nexbim.paceapp.fr">NexBim</a> · projet « ${echapper(projetNom)} » · ${liste.length} image${liste.length > 1 ? "s" : ""} · ${echapper(new Date().toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }))}</p>` +
+      blocs.join("");
+    const note = await creerNotePace(section, o.titre, html);
+    exportPace = { etape: "fin", note, ou };
+    jouerBruitage("cote");
+  } catch (err) {
+    if (/JWT|jwt|NON_CONNECTE/.test(String(err))) deconnecterPace();
+    exportPace = { etape: comptePace() ? "destination" : "compte", erreur: messagePace(err) };
+  }
+  majGalerie();
 }
 
 async function imageDe(c: Capture) {
@@ -660,7 +1029,7 @@ async function charger(id: string | null) {
   if (id) {
     const { data, error } = await nuage
       .from("captures")
-      .select("id, genre, auteur_nom, cree_le, message, statut, vue, largeur, hauteur")
+      .select("id, genre, auteur, auteur_nom, cree_le, message, statut, vue, largeur, hauteur")
       .eq("projet_id", id)
       .order("cree_le", { ascending: false })
       .limit(300);

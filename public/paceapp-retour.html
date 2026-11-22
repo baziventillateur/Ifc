@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>NexBim · PaceApp</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #1b2129;
+        color: #e8edf3;
+        font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      main {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        height: 100%;
+        padding: 24px;
+        text-align: center;
+        box-sizing: border-box;
+      }
+      strong {
+        font-size: 17px;
+      }
+      p {
+        margin: 0;
+        color: #a9b4c0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <strong id="titre">Connexion PaceApp…</strong>
+      <p id="texte">Un instant.</p>
+    </main>
+    <script>
+      // Retour de l'autorisation PaceApp : on transmet le code à NexBim (fenêtre d'origine,
+      // canal du navigateur et stockage, selon ce que le téléphone permet), puis on se ferme.
+      (function () {
+        var q = new URLSearchParams(location.search);
+        var r = { type: "nexbim-paceapp", code: q.get("code"), state: q.get("state"), error: q.get("error") };
+        try {
+          localStorage.setItem("nexbim-paceapp-retour", JSON.stringify(r));
+        } catch (e) {}
+        try {
+          if ("BroadcastChannel" in window) new BroadcastChannel("nexbim-paceapp").postMessage(r);
+        } catch (e) {}
+        try {
+          if (window.opener) window.opener.postMessage(r, location.origin);
+        } catch (e) {}
+        var ok = !!r.code;
+        document.getElementById("titre").textContent = ok ? "PaceApp est relié à NexBim" : "Connexion PaceApp interrompue";
+        document.getElementById("texte").textContent = ok
+          ? "Vous pouvez revenir à NexBim pour terminer l'export."
+          : "Revenez à NexBim pour réessayer.";
+        setTimeout(function () {
+          window.close();
+        }, 600);
+      })();
+    </script>
+  </body>
+</html>

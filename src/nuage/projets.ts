@@ -334,6 +334,9 @@ export const projetCharge = new Signal<string | null>();
 
 /** Prénom de la personne connectée (sinon son e-mail), pour signer captures et remarques. */
 export const monPrenom = () => etat.moi.prenom || etat.moi.email.split("@")[0] || "";
+export const monId = () => etat.moi.id;
+export const monEmail = () => etat.moi.email;
+export const nomProjetCourant = () => etat.courant?.nom ?? "";
 
 /** Administrateur connecté (fonctions en essai, réservées pour l'instant). */
 export const estAdmin = () => etat.admin;

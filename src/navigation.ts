@@ -212,6 +212,55 @@ window.addEventListener("pointercancel", (e) => {
   finRegard();
 });
 
+// --- Deux doigts qui tournent l'un autour de l'autre : la vue tourne -------------------
+// Le pincement garde son rôle (avancer, reculer) ; la torsion fait tourner autour du point
+// visé, ou tourner la tête en mode œil et en visite. Un petit seuil évite de tourner sans
+// le vouloir en pinçant.
+
+const touchers = new Map<number, { x: number; y: number }>();
+let torsion: { angle: number; cumul: number; actif: boolean } | null = null;
+const SEUIL_TORSION = THREE.MathUtils.degToRad(9);
+function angleDesDoigts() {
+  const [a, b] = [...touchers.values()];
+  return Math.atan2(b.y - a.y, b.x - a.x);
+}
+canvas.addEventListener("pointerdown", (e) => {
+  if (e.pointerType !== "touch") return;
+  touchers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  torsion = touchers.size === 2 ? { angle: angleDesDoigts(), cumul: 0, actif: false } : null;
+});
+window.addEventListener("pointermove", (e) => {
+  if (!touchers.has(e.pointerId)) return;
+  touchers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touchers.size !== 2 || !torsion || unDoigtBloque) return;
+  const a = angleDesDoigts();
+  let d = a - torsion.angle;
+  if (d > Math.PI) d -= 2 * Math.PI;
+  if (d < -Math.PI) d += 2 * Math.PI;
+  torsion.angle = a;
+  torsion.cumul += d;
+  if (!torsion.actif) {
+    if (Math.abs(torsion.cumul) < SEUIL_TORSION) return;
+    torsion.actif = true;
+    d = torsion.cumul;
+  }
+  if (oeil || visite) {
+    // Torsion dans le sens des aiguilles d'une montre : on tourne la tête à droite.
+    const lacet = THREE.MathUtils.radToDeg(d);
+    if (regardExterne) regardExterne(lacet);
+    else tournerTete(lacet, 0);
+  } else {
+    // Vue extérieure : la maquette tourne avec les doigts, autour du point visé.
+    void controles.rotate(d, 0, false);
+  }
+});
+const leverToucher = (e: PointerEvent) => {
+  if (!touchers.delete(e.pointerId)) return;
+  torsion = touchers.size === 2 ? { angle: angleDesDoigts(), cumul: 0, actif: false } : null;
+};
+window.addEventListener("pointerup", leverToucher);
+window.addEventListener("pointercancel", leverToucher);
+
 // --- Projection : un bouton rond à côté de l'œil ---------------------------------------
 // Toucher : bascule entre la vue orthogonale (sans perspective) et la perspective.
 // Appui long : deux angles de vue, normal (60°) et large (100°, pour les intérieurs).

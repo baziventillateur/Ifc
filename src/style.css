@@ -4121,13 +4121,46 @@ body.paysage.menu-visible .poignee-menu {
   pointer-events: none;
 }
 
+.photo-vue-cadre {
+  position: absolute;
+  overflow: hidden;
+}
 .photo-vue-img {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
   object-fit: contain;
   transition: opacity 0.1s;
+}
+
+.photo-vue-zone {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: zoom-in;
+}
+.photo-vue-croix,
+.photo-vue-retour {
+  appearance: none;
+  position: absolute;
+  pointer-events: auto;
+  height: 34px;
+  min-width: 34px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(13, 17, 22, 0.72);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.photo-vue-retour {
+  font-size: 12px;
+}
+.photo-vue-retour[hidden] {
+  display: none;
 }
 
 .photo-vue-legende {

@@ -1141,9 +1141,113 @@ async function voirPhoto(c: Capture) {
       void fermer().then(() => ouvrirGalerie(c.id));
     }),
   );
-  ecran.append(img, etiquette, barre);
+  // Zone des gestes (par-dessus l'image) : zoom à deux doigts, à la molette ou par double
+  // toucher, et déplacement d'un doigt une fois zoomé. La maquette suit exactement le zoom
+  // (même partie de la vue), la photo reste donc calée dessus.
+  const zone = cree("div", "photo-vue-zone");
+  const croix = bouton("photo-vue-croix", "✕", () => void fermer(), "Fermer la photo");
+  croix.setAttribute("aria-label", "Fermer la photo");
+  const retour = bouton("photo-vue-retour", "1×", () => zoomer(1, 0, 0), "Revenir à la photo entière");
+  retour.hidden = true;
+  // Cadre de la photo affichée en entier : zoomée, elle reste dans ce cadre (elle ne passe
+  // pas sur les barres du haut) ; la maquette, elle, est zoomée sur tout l'écran.
+  const cadre = cree("div", "photo-vue-cadre");
+  cadre.append(img);
+  ecran.append(cadre, zone, croix, retour, etiquette, barre);
   document.body.append(ecran);
   void imageDe(c).then((u) => u && (img.src = u));
+
+  const vue = { z: 1, tx: 0, ty: 0 };
+  const appliquerZoom = () => {
+    const taille = monde.renderer!.getSize();
+    const W = taille.x;
+    const H = taille.y;
+    vue.z = THREE.MathUtils.clamp(vue.z, 1, 6);
+    vue.tx = THREE.MathUtils.clamp(vue.tx, W - vue.z * W, 0);
+    vue.ty = THREE.MathUtils.clamp(vue.ty, H - vue.z * H, 0);
+    img.style.transformOrigin = "0 0";
+    img.style.transform = vue.z > 1.001 ? `translate(${vue.tx}px, ${vue.ty}px) scale(${vue.z})` : "";
+    if (vue.z > 1.001) persp.setViewOffset(W, H, -vue.tx / vue.z, -vue.ty / vue.z, W / vue.z, H / vue.z);
+    else persp.clearViewOffset();
+    retour.hidden = vue.z <= 1.001;
+    void rafraichir();
+  };
+  /** Zoom vers z en gardant le point (x, y) de l'écran sous le doigt. */
+  function zoomer(z: number, x: number, y: number) {
+    const k = THREE.MathUtils.clamp(z, 1, 6) / vue.z;
+    vue.tx = x - (x - vue.tx) * k;
+    vue.ty = y - (y - vue.ty) * k;
+    vue.z *= k;
+    appliquerZoom();
+  }
+  // Croix en haut à droite de la photo (là où elle s'affiche en entier).
+  const placerCroix = () => {
+    const taille = monde.renderer!.getSize();
+    const pw = c.largeur || 4;
+    const ph = c.hauteur || 3;
+    const k = Math.min(taille.x / pw, taille.y / ph);
+    const haut = Math.max(0, (taille.y - ph * k) / 2);
+    const droite = Math.max(0, (taille.x - pw * k) / 2);
+    Object.assign(cadre.style, { left: `${droite}px`, top: `${haut}px`, width: `${taille.x - 2 * droite}px`, height: `${taille.y - 2 * haut}px` });
+    Object.assign(img.style, { left: `${-droite}px`, top: `${-haut}px`, width: `${taille.x}px`, height: `${taille.y}px` });
+    croix.style.top = `${haut + 8}px`;
+    croix.style.right = `${droite + 8}px`;
+    retour.style.top = `${haut + 8}px`;
+    retour.style.right = `${droite + 50}px`;
+  };
+  placerCroix();
+  const doigts = new Map<number, { x: number; y: number }>();
+  let dernierToucher = { t: 0, x: 0, y: 0 };
+  let pince: { d: number; mx: number; my: number } | null = null;
+  const milieu = () => {
+    const [a, b] = [...doigts.values()];
+    return { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+  };
+  zone.addEventListener("pointerdown", (e) => {
+    zone.setPointerCapture(e.pointerId);
+    doigts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    pince = doigts.size === 2 ? milieu() : null;
+    if (doigts.size === 1) {
+      // Double toucher : zoom × 2,5 à cet endroit, ou retour à la photo entière.
+      const t = performance.now();
+      if (t - dernierToucher.t < 320 && Math.hypot(e.clientX - dernierToucher.x, e.clientY - dernierToucher.y) < 30) {
+        if (vue.z > 1.05) zoomer(1, e.clientX, e.clientY);
+        else zoomer(2.5, e.clientX, e.clientY);
+        dernierToucher.t = 0;
+      } else dernierToucher = { t, x: e.clientX, y: e.clientY };
+    }
+  });
+  zone.addEventListener("pointermove", (e) => {
+    const avant = doigts.get(e.pointerId);
+    if (!avant) return;
+    const apres = { x: e.clientX, y: e.clientY };
+    doigts.set(e.pointerId, apres);
+    if (doigts.size >= 2 && pince) {
+      const m = milieu();
+      vue.tx += m.mx - pince.mx;
+      vue.ty += m.my - pince.my;
+      zoomer(vue.z * (m.d / Math.max(1, pince.d)), m.mx, m.my);
+      pince = m;
+    } else if (doigts.size === 1 && vue.z > 1.001) {
+      vue.tx += apres.x - avant.x;
+      vue.ty += apres.y - avant.y;
+      appliquerZoom();
+    }
+  });
+  const leverDoigt = (e: PointerEvent) => {
+    doigts.delete(e.pointerId);
+    pince = doigts.size === 2 ? milieu() : null;
+  };
+  zone.addEventListener("pointerup", leverDoigt);
+  zone.addEventListener("pointercancel", leverDoigt);
+  zone.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      zoomer(vue.z * Math.exp(-e.deltaY * 0.0018), e.clientX, e.clientY);
+    },
+    { passive: false },
+  );
 
   // Angle de vue : celui de l'appareil, ajusté pour que la photo (affichée en entier)
   // recouvre exactement la maquette.
@@ -1160,7 +1264,12 @@ async function voirPhoto(c: Capture) {
     void rafraichir();
   };
   regler();
-  window.addEventListener("resize", regler);
+  const surRedimension = () => {
+    regler();
+    placerCroix();
+    appliquerZoom();
+  };
+  window.addEventListener("resize", surRedimension);
   const [px, py, pz] = c.vue.p;
   const [cx, cy, cz] = c.vue.c;
   recentrerPivot();
@@ -1169,7 +1278,8 @@ async function voirPhoto(c: Capture) {
   async function fermer() {
     if (!photoOuverte) return;
     photoOuverte = false;
-    window.removeEventListener("resize", regler);
+    window.removeEventListener("resize", surRedimension);
+    persp.clearViewOffset();
     ecran.remove();
     if (sonIcone) sonIcone.userData.masquee = false;
     suspendreEffets(false);

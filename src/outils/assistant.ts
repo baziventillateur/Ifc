@@ -15,6 +15,7 @@ import { detecterPourAssistant, nomElement } from "./clashs";
 import { enregistrerOutil } from "./panneau";
 import { nuage } from "../nuage/client";
 import { note } from "./ui";
+import { decrireVue } from "../vue-ia";
 
 const MODELE = "claude-sonnet-5-5";
 type EtatIA = { admin: boolean; actif: boolean; questions: number; essai: number; demande: boolean };
@@ -246,11 +247,12 @@ async function executer(nom: string, entree: Record<string, any>): Promise<unkno
   return { erreur: `Outil inconnu : ${nom}` };
 }
 
-function systeme() {
+function systeme(vue = "") {
   const liste = [...maquettes.values()].map((m) => `« ${m.id} » (${m.lot})`).join(", ") || "aucune";
   return `Tu es l'assistant BIM d'une visionneuse de maquettes IFC, utilisée par un ingénieur travaux d'une entreprise générale en France.
 Maquettes chargées : ${liste}.
-Règles :
+${vue ? `Vue actuelle de l'utilisateur (au moment de la question) :\n${vue}\n` : ""}Règles :
+- Tu ne vois pas l'écran : la « Vue actuelle » ci-dessus dit où se trouve l'utilisateur et ce qu'il regarde. Sers-t'en pour comprendre « ici », « ce mur », « devant moi », « ce niveau », et appuie-toi sur les outils pour les détails.
 - Réponds en français, brièvement et concrètement (phrases courtes, listes si utile). Unités : m³, m², m, à la française (virgule décimale).
 - Les chiffres viennent uniquement des outils. N'invente jamais une quantité ; si une donnée manque (surface ou longueur absentes des quantités IFC), dis-le.
 - Le volume est mesuré sur la géométrie ; surfaces et longueurs sont celles déclarées dans l'IFC.
@@ -388,7 +390,9 @@ enregistrerOutil("assistant", "IA", "Assistant IA", (section) => {
   }
 
   async function appeler() {
-    const r = await fonctionIA({ model: MODELE, system: systeme(), tools: OUTILS, messages });
+    // Où l'on est et ce qu'on regarde, relu à chaque échange (la vue a pu bouger).
+    const vue = await decrireVue().catch((e) => (console.warn("vue IA", e), ""));
+    const r = await fonctionIA({ model: MODELE, system: systeme(vue), tools: OUTILS, messages });
     if (r.ok) {
       const q = (r.data as any)?.nexbim;
       if (q && etatIA) {

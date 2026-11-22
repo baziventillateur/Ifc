@@ -28,7 +28,7 @@ import {
   recentrerPivot,
   telecharger,
 } from "./noyau";
-import { modeClicActif } from "./fiche";
+import { modeClicActif, viser } from "./fiche";
 import { nuage } from "./nuage/client";
 import { monPrenom, projetCharge } from "./nuage/projets";
 import { quitterVisite, suspendreVisite, visiteActive } from "./visite";
@@ -799,8 +799,9 @@ async function rangerPhoto(fichier: Blob, vue: Vue) {
   if (projet) void envoyer(cap, image, petite);
 }
 
-// Icônes dans la maquette : une petite pyramide (champ de vision) qui pointe dans la
-// direction de la prise de vue, visible à travers les murs, grossie avec la distance.
+// Icônes dans la maquette : un petit appareil (pyramide du champ de vision) qui pointe
+// dans la direction de la prise de vue, avec un pictogramme photo sur sa face avant.
+// C'est un objet comme les autres : taille fixe, caché par les murs.
 const CLE_ICONES = "nexbim-icones-photos";
 let iconesVisibles = true;
 try {
@@ -811,31 +812,84 @@ try {
 const groupeIcones = new THREE.Group();
 groupeIcones.name = "photos-situees";
 monde.scene.three.add(groupeIcones);
-const matTrait = new THREE.LineBasicMaterial({ color: 0xff8a1f, depthTest: false, transparent: true });
-const matFond = new THREE.MeshBasicMaterial({ color: 0xff8a1f, depthTest: false, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
+const ICONE_L = 0.15; // demi-largeur de la face avant (30 cm)
+const ICONE_H = 0.1125; // demi-hauteur (22,5 cm)
+const ICONE_P = 0.25; // profondeur, du point de prise de vue à la face avant
+const matTrait = new THREE.LineBasicMaterial({ color: 0xff8a1f, transparent: true, opacity: 0.75 });
 const matCible = new THREE.MeshBasicMaterial({ visible: false });
+/** Pictogramme « photo » : cadre, ciel, soleil et montagnes. */
+const matImage = (() => {
+  const W = 256;
+  const H = 192;
+  const toile = document.createElement("canvas");
+  toile.width = W;
+  toile.height = H;
+  const g = toile.getContext("2d")!;
+  const arrondi = (x: number, y: number, l: number, h: number, r: number) => {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + l, y, x + l, y + h, r);
+    g.arcTo(x + l, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + l, y, r);
+    g.closePath();
+  };
+  g.fillStyle = "#ff8a1f";
+  g.fillRect(0, 0, W, H);
+  arrondi(10, 10, W - 20, H - 20, 14);
+  g.fillStyle = "#ffffff";
+  g.fill();
+  g.save();
+  arrondi(22, 22, W - 44, H - 44, 8);
+  g.clip();
+  const ciel = g.createLinearGradient(0, 22, 0, H - 22);
+  ciel.addColorStop(0, "#8ec9ff");
+  ciel.addColorStop(1, "#d8eeff");
+  g.fillStyle = ciel;
+  g.fillRect(22, 22, W - 44, H - 44);
+  g.fillStyle = "#ffc53d";
+  g.beginPath();
+  g.arc(W - 70, 62, 18, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#5b8f5a";
+  g.beginPath();
+  g.moveTo(14, H - 22);
+  g.lineTo(92, 78);
+  g.lineTo(170, H - 22);
+  g.fill();
+  g.fillStyle = "#3f6e46";
+  g.beginPath();
+  g.moveTo(104, H - 22);
+  g.lineTo(168, 104);
+  g.lineTo(W - 6, H - 22);
+  g.fill();
+  g.restore();
+  const t = new THREE.CanvasTexture(toile);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide });
+})();
 const geoTraits = (() => {
-  // Sommet à l'origine, base rectangulaire vers +Z (lookAt oriente +Z vers la cible).
-  const L = 0.16;
-  const H = 0.12;
-  const P = 0.32;
+  // Sommet à l'origine (point de prise de vue), face avant vers +Z (lookAt oriente +Z
+  // vers la cible).
   const coins = [
-    [-L, -H, P],
-    [L, -H, P],
-    [L, H, P],
-    [-L, H, P],
+    [-ICONE_L, -ICONE_H, ICONE_P],
+    [ICONE_L, -ICONE_H, ICONE_P],
+    [ICONE_L, ICONE_H, ICONE_P],
+    [-ICONE_L, ICONE_H, ICONE_P],
   ];
   const pts: number[] = [];
   for (const c of coins) pts.push(0, 0, 0, ...c);
   for (let i = 0; i < 4; i++) pts.push(...coins[i], ...coins[(i + 1) % 4]);
-  // Petit repère « haut » au-dessus de la base.
-  pts.push(-L * 0.4, H, P, 0, H * 1.6, P, 0, H * 1.6, P, L * 0.4, H, P);
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
   return g;
 })();
-const geoFond = new THREE.PlaneGeometry(0.32, 0.24).translate(0, 0, 0.32);
-const geoCible = new THREE.SphereGeometry(0.28, 8, 6).translate(0, 0, 0.16);
+// L'image se lit à l'endroit vue de derrière l'appareil, comme l'écran d'un téléphone.
+const geoImage = new THREE.PlaneGeometry(ICONE_L * 2, ICONE_H * 2).rotateY(Math.PI).translate(0, 0, ICONE_P);
+const geoCible = new THREE.SphereGeometry(0.22, 8, 6).translate(0, 0, ICONE_P * 0.6);
+/** Centre de l'icône dans la maquette (pour savoir si un mur la cache). */
+const centreIcone = (o: THREE.Object3D) => o.localToWorld(new THREE.Vector3(0, 0, ICONE_P * 0.6));
 
 function majIcones() {
   for (const o of [...groupeIcones.children]) groupeIcones.remove(o);
@@ -843,25 +897,72 @@ function majIcones() {
   for (const c of captures) {
     if (c.genre !== "photo" || !c.vue) continue;
     const icone = new THREE.Group();
-    const traits = new THREE.LineSegments(geoTraits, matTrait);
-    const fond = new THREE.Mesh(geoFond, matFond);
-    const cible = new THREE.Mesh(geoCible, matCible);
-    for (const m of [traits, fond]) m.renderOrder = 998;
-    icone.add(traits, fond, cible);
+    icone.add(
+      new THREE.LineSegments(geoTraits, matTrait),
+      new THREE.Mesh(geoImage, matImage),
+      new THREE.Mesh(geoCible, matCible),
+    );
     icone.position.fromArray(c.vue.p);
     icone.lookAt(new THREE.Vector3().fromArray(c.vue.c));
     icone.userData.capture = c.id;
     groupeIcones.add(icone);
   }
+  groupeIcones.updateMatrixWorld(true);
+  planifierCachees();
   void rafraichir();
 }
 
+// Une icône derrière un mur ne se voit pas : elle ne doit pas non plus se toucher à
+// travers. On le vérifie une fois la caméra immobile (tir dans la maquette vers chaque
+// icône à l'écran), pour décider tout de suite au moment du toucher.
+let minuterieCachees = 0;
+let verificationEnCours = false;
+function planifierCachees() {
+  clearTimeout(minuterieCachees);
+  minuterieCachees = window.setTimeout(() => void verifierCachees(), 300);
+}
+async function verifierCachees() {
+  if (verificationEnCours) return planifierCachees();
+  verificationEnCours = true;
+  try {
+    const cam = monde.camera.three;
+    cam.updateMatrixWorld();
+    groupeIcones.updateMatrixWorld(true);
+    const r = monde.renderer!.three.domElement.getBoundingClientRect();
+    const oeil = cam.position.clone();
+    const proches = groupeIcones.children
+      .filter((o) => o.visible)
+      .sort((a, b) => a.position.distanceToSquared(oeil) - b.position.distanceToSquared(oeil))
+      .slice(0, 12);
+    for (const o of proches) {
+      const centre = centreIcone(o);
+      const ecran = centre.clone().project(cam);
+      if (Math.abs(ecran.x) > 1 || Math.abs(ecran.y) > 1 || ecran.z > 1) continue;
+      const v = await viser({
+        clientX: r.left + ((ecran.x + 1) / 2) * r.width,
+        clientY: r.top + ((1 - ecran.y) / 2) * r.height,
+      });
+      o.userData.cachee = !!v && oeil.distanceTo(v.point) < oeil.distanceTo(centre) - 0.1;
+    }
+  } catch {
+    // Sans réponse de la maquette, les icônes restent touchables.
+  } finally {
+    verificationEnCours = false;
+  }
+}
+
+const derniereVue = new THREE.Matrix4();
 monde.renderer!.onBeforeUpdate.add(() => {
   if (!groupeIcones.children.length) return;
-  const cam = monde.camera.three.position;
+  const cam = monde.camera.three;
   for (const o of groupeIcones.children) {
-    // Assez grande pour être vue et touchée de loin, discrète de près.
-    o.scale.setScalar(THREE.MathUtils.clamp(cam.distanceTo(o.position) / 5, 1, 40));
+    // On ne voit pas une icône de l'intérieur : en se tenant au point de prise de vue,
+    // elle couvrirait l'écran.
+    o.visible = !o.userData.masquee && cam.position.distanceTo(o.position) > 0.6;
+  }
+  if (!cam.matrixWorld.equals(derniereVue)) {
+    derniereVue.copy(cam.matrixWorld);
+    planifierCachees();
   }
 });
 
@@ -878,7 +979,8 @@ monde.renderer!.onBeforeUpdate.add(() => {
     monde.camera.three.updateMatrixWorld();
     rayon.setFromCamera(ndc, monde.camera.three);
     groupeIcones.updateMatrixWorld(true);
-    const touche = rayon.intersectObjects(groupeIcones.children, true)[0];
+    const visibles = groupeIcones.children.filter((o) => o.visible && !o.userData.cachee);
+    const touche = rayon.intersectObjects(visibles, true)[0];
     let o: THREE.Object3D | null = touche?.object ?? null;
     while (o && !o.userData.capture) o = o.parent;
     return o ? captures.find((c) => c.id === o!.userData.capture) ?? null : null;
@@ -909,7 +1011,21 @@ monde.renderer!.onBeforeUpdate.add(() => {
       if (!c || !d || d.id !== e.pointerId) return;
       e.stopImmediatePropagation();
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 12) return;
-      void voirPhoto(c);
+      // Dernière vérification : un mur entre l'œil et l'icône l'emporte.
+      const icone = groupeIcones.children.find((o) => o.userData.capture === c.id);
+      const pos = { clientX: e.clientX, clientY: e.clientY };
+      void viser(pos)
+        .catch(() => null)
+        .then((v) => {
+          if (icone && v) {
+            const oeil = monde.camera.three.position;
+            if (oeil.distanceTo(v.point) < oeil.distanceTo(centreIcone(icone)) - 0.25) {
+              icone.userData.cachee = true;
+              return;
+            }
+          }
+          void voirPhoto(c);
+        });
     },
     { capture: true },
   );
@@ -934,7 +1050,7 @@ async function voirPhoto(c: Capture) {
   const enVisite = visiteActive();
   // Son icône, vue de l'intérieur, rayerait l'image.
   const sonIcone = groupeIcones.children.find((o) => o.userData.capture === c.id);
-  if (sonIcone) sonIcone.visible = false;
+  if (sonIcone) sonIcone.userData.masquee = true;
   suspendreVisite(true);
   bloquerDecalage(true);
   if (avant.ortho) await definirProjection("Perspective");
@@ -993,7 +1109,7 @@ async function voirPhoto(c: Capture) {
     photoOuverte = false;
     window.removeEventListener("resize", regler);
     ecran.remove();
-    if (sonIcone) sonIcone.visible = true;
+    if (sonIcone) sonIcone.userData.masquee = false;
     persp.fov = avant.fov;
     persp.updateProjectionMatrix();
     if (enVisite && visiteActive()) {

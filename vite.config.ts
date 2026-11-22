@@ -12,7 +12,8 @@ function version() {
   const git = (commande: string) => execSync(`git ${commande}`, { encoding: "utf-8" }).trim();
   try {
     const total = Number(git("rev-list --count HEAD"));
-    const lignes = git('log -15 --date=iso-strict --pretty=format:%h%x09%cd%x09%s').split("\n");
+    // Tout l'historique (borné) : le public voit les grandes étapes de 10 en 10, l'administrateur le détail.
+    const lignes = git('log -400 --date=iso-strict --pretty=format:%h%x09%cd%x09%s').split("\n");
     return {
       numero: `1.${total}`,
       date: new Date().toISOString(),

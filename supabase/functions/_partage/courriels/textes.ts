@@ -29,7 +29,8 @@ export type TypeCourriel =
   | "changement_email_ancienne" // changement d'adresse : prévenir l'ancienne adresse
   | "lien_connexion" // connexion par lien
   | "code" // code de vérification
-  | "invitation_compte"; // invitation créée depuis le tableau de bord Supabase
+  | "invitation_compte" // invitation créée depuis le tableau de bord Supabase
+  | "mise_a_jour"; // l'administrateur prévient qu'une nouvelle version est en ligne
 
 export interface TexteCourriel {
   /** Objet de l'e-mail. */
@@ -183,6 +184,17 @@ export const COURRIELS: Record<Langue, Record<TypeCourriel, TexteCourriel>> = {
       bouton: "Accepter l'invitation",
       raison: "Vous recevez cet e-mail car un administrateur de NexBim vous a invité. Si vous n'attendiez rien, ignorez ce message.",
     },
+    mise_a_jour: {
+      sujet: "Une nouvelle version de NexBim est disponible",
+      apercu: "Une mise à jour qui peut vous être utile : un clic pour l'ouvrir.",
+      badge: "Mise à jour",
+      titre: "Une nouvelle version est disponible",
+      intro:
+        "Une nouvelle mise à jour de NexBim a été publiée (version **{version}**). Nous pensons qu'elle peut être pertinente pour vous.",
+      bouton: "Mettre à jour NexBim",
+      sousBouton: "Ce bouton ouvre NexBim : la dernière version se charge toute seule.",
+      raison: "Vous recevez cet e-mail car vous avez un compte NexBim et que vous utilisez une version précédente.",
+    },
   },
 
   en: {
@@ -272,6 +284,16 @@ export const COURRIELS: Record<Langue, Record<TypeCourriel, TexteCourriel>> = {
       intro: "A NexBim account was prepared for you. Accept the invitation to choose your password.",
       bouton: "Accept the invitation",
       raison: "You are receiving this email because a NexBim administrator invited you. If you weren't expecting anything, ignore this message.",
+    },
+    mise_a_jour: {
+      sujet: "A new version of NexBim is available",
+      apercu: "An update that may be useful to you: one click to open it.",
+      badge: "Update",
+      titre: "A new version is available",
+      intro: "A new NexBim update has been released (version **{version}**). We think it may be relevant to you.",
+      bouton: "Update NexBim",
+      sousBouton: "This button opens NexBim: the latest version loads on its own.",
+      raison: "You are receiving this email because you have a NexBim account and are using a previous version.",
     },
   },
 };

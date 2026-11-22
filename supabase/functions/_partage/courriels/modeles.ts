@@ -13,6 +13,8 @@ export interface Valeurs {
   lien?: string;
   /** Code de vérification. */
   code?: string;
+  /** Numéro de version (e-mail « mise_a_jour »). */
+  version?: string;
 }
 
 export interface Courriel {
@@ -31,6 +33,7 @@ export function rediger(type: TypeCourriel, langueVoulue: unknown, v: Valeurs): 
     email: v.email ?? "",
     nouvelle: v.nouvelle ?? "",
     jours: v.jours ?? 30,
+    version: v.version ?? "",
   };
 
   let visuel: string | undefined;

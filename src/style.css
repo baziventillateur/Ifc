@@ -2613,6 +2613,123 @@ canvas.regard {
   font-size: 10.5px;
 }
 
+.versions-liste.admin .versions-ligne.avec-gens {
+  grid-template-columns: auto 1fr auto;
+}
+.versions-ligne.avec-gens .versions-date {
+  grid-column: 2 / 4;
+}
+.versions-pastilles {
+  appearance: none;
+  grid-row: 1;
+  grid-column: 3;
+  align-self: start;
+  display: flex;
+  align-items: flex-start;
+  padding: 0 0 4px 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.versions-avatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-left: -7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--panneau, #161b22);
+  border-radius: 50%;
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.versions-pastilles .versions-avatar:first-child {
+  margin-left: 0;
+}
+.versions-avatar.bas {
+  transform: translateY(4px);
+}
+.versions-avatar.plus {
+  background: #2b3440;
+  color: var(--texte);
+  font-size: 9px;
+}
+.versions-avatar.grand {
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  font-size: 11px;
+}
+.versions-resume {
+  margin: -4px 0 6px;
+  color: var(--doux);
+  font-size: 12px;
+}
+.versions-personnes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 6px;
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.versions-personne {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.versions-personne-texte {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.versions-personne-texte strong {
+  font-weight: 600;
+}
+.versions-personne-texte span {
+  color: var(--doux);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.versions-personne-vu {
+  flex: none;
+  color: var(--doux);
+  font-size: 10.5px;
+}
+.versions-prevenir {
+  appearance: none;
+  flex: none;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.versions-prevenir:disabled {
+  border-color: var(--bord);
+  color: var(--doux);
+  cursor: default;
+}
+.versions-tout {
+  display: block;
+  margin: -4px 0 8px;
+  font-size: 12px;
+}
+
 /* Sur l'accueil et la connexion, le numéro reste lisible par-dessus. */
 body:has(.porte) .version-etiquette {
   z-index: 100;

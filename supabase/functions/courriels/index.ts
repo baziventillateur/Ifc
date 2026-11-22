@@ -126,6 +126,7 @@ const EXEMPLES: Record<TypeCourriel, Parameters<typeof rediger>[2]> = {
   lien_connexion: { lien: SITE },
   code: { code: "482913" },
   invitation_compte: { lien: SITE },
+  mise_a_jour: { version: "1.84", lien: SITE },
 };
 
 async function outil(req: Request): Promise<Response> {

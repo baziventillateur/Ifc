@@ -31,7 +31,7 @@ import {
 } from "./client";
 import { compresser, decompresser, envoyerMaquette } from "./envoi";
 import { seDeconnecter } from "./compte";
-import { ouvrirVersions } from "../mise-a-jour";
+import { numeroVersion, ouvrirVersions } from "../mise-a-jour";
 
 type Projet = { id: string; nom: string; proprietaire: string };
 type Fichier = {
@@ -347,12 +347,20 @@ export async function demarrerNuage(utilisateur: User) {
   etat.moi.id = utilisateur.id;
   etat.moi.email = utilisateur.email ?? "";
   const [{ data: profil }, { data: admin }] = await Promise.all([
-    nuage.from("profils").select("prenom, taille_cm").eq("id", utilisateur.id).maybeSingle(),
+    nuage.from("profils").select("prenom, taille_cm, version_app").eq("id", utilisateur.id).maybeSingle(),
     nuage.rpc("suis_je_admin"),
   ]);
   etat.moi.prenom = profil?.prenom ?? "";
   etat.moi.taille = typeof profil?.taille_cm === "number" ? profil.taille_cm : null;
   etat.admin = admin === true;
+  // Version de l'appli utilisée (fenêtre des versions de l'administrateur).
+  if (numeroVersion !== "locale" && profil?.version_app !== numeroVersion) {
+    void nuage
+      .from("profils")
+      .update({ version_app: numeroVersion, version_le: new Date().toISOString() })
+      .eq("id", utilisateur.id)
+      .then(({ error }) => error && console.warn("version", error.message));
+  }
   majCompte();
   await chargerProjets();
   let memorise: string | null = null;

@@ -1191,11 +1191,12 @@ function dessiner() {
           return l;
         };
         ligne.append(
-          caseEffet("marche", "Marche", "La vue se balance légèrement à chaque pas"),
-          caseEffet("flou", "Flou des bords", "Centre net, bords flous et assombris (demande un peu plus à la carte graphique)"),
+          caseEffet("marche", "Marche", "La vue se balance à chaque pas et s'élargit un peu quand on court"),
+          caseEffet("flou", "Flou", "Centre net, bords flous et assombris, image qui file en tournant vite (demande un peu plus à la carte graphique)"),
+          caseEffet("pas", "Bruit de pas", "Un pas léger à chaque foulée"),
         );
         actions.append(ligne);
-      }, "", "Effets de jeu vidéo : marche, flou des bords");
+      }, "", "Effets de jeu vidéo : marche, flou, bruit de pas");
       if (!ar) actions.append(effets);
       const vitesse = puce(`Vitesse : ${allureVisite()}`, () => {
         vitesse.textContent = `Vitesse : ${allureSuivante()}`;

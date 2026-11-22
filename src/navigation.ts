@@ -475,6 +475,16 @@ export function allureSuivante(): Allure {
   return allure;
 }
 
+/** On court en visite : Maj tenue avec une touche de marche (pas les flèches du regard). */
+export function courseEnCours() {
+  if (!visite || !rapide) return false;
+  for (const [code, s] of enfoncees) {
+    if (FLECHES.has(code)) continue;
+    if (s === "avant" || s === "arriere" || s === "gauche" || s === "droite") return true;
+  }
+  return false;
+}
+
 function pas(t: number) {
   boucle = 0;
   if (!enfoncees.size) return;

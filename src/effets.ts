@@ -1,23 +1,25 @@
 // Effets « jeu vidéo » de la visite à la première personne, au choix (cochés dans le panneau
-// de visite, retenus sur l'appareil) :
+// de visite, retenus sur l'appareil). Tout se passe dans le navigateur, rien sur le serveur.
 // - Marche : la vue se balance légèrement à chaque pas (haut-bas, un peu de côté, une
-//   pointe d'inclinaison), selon la vitesse réelle de déplacement. Ne coûte rien.
-// - Flou des bords : le centre reste net, les bords et les coins se floutent et s'assombrissent
-//   un peu (comme dans les jeux de tir). Le flou se renforce quand on court ou qu'on
-//   tourne vite. Coûte une copie de l'image et une passe par image : en option.
+//   pointe d'inclinaison) selon la vitesse réelle, et l'angle de vue s'élargit un peu
+//   quand on court. Ne coûte rien.
+// - Flou : le centre reste net, les bords et les coins se floutent et s'assombrissent un
+//   peu (comme dans les jeux de tir), plus quand on court ; en tournant vite, l'image
+//   file dans le sens du mouvement. Coûte une copie de l'image et une passe par image.
+// - Bruit de pas : un pas léger, fabriqué sur place (aucun fichier son), à chaque foulée.
 //
-// Le balancement décale la caméra le temps du dessin seulement : les outils (sélection,
-// mesure, captures…) voient toujours la vraie position de l'œil.
+// Balancement et angle de vue changent la caméra le temps du dessin seulement : les outils
+// (sélection, mesure, captures…) voient toujours la vraie position de l'œil.
 
 import * as THREE from "three";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { monde } from "./noyau";
-import { modeVisite } from "./navigation";
+import { courseEnCours, modeVisite } from "./navigation";
 import { arActif } from "./suivi";
 
-export type Effet = "marche" | "flou";
+export type Effet = "marche" | "flou" | "pas";
 const CLE = "nexbim-effets";
-const reglages: Record<Effet, boolean> = { marche: false, flou: false };
+const reglages: Record<Effet, boolean> = { marche: false, flou: false, pas: false };
 try {
   Object.assign(reglages, JSON.parse(localStorage.getItem(CLE) ?? "{}"));
 } catch {
@@ -26,6 +28,8 @@ try {
 export const effetActif = (e: Effet) => reglages[e];
 export function reglerEffet(e: Effet, oui: boolean) {
   reglages[e] = oui;
+  // Le son ne peut démarrer qu'après un geste de l'utilisateur : ce clic en est un.
+  if (e === "pas" && oui) preparerSon();
   try {
     localStorage.setItem(CLE, JSON.stringify(reglages));
   } catch {
@@ -47,6 +51,9 @@ const cam = () => monde.camera.three;
 const avant = { p: new THREE.Vector3(), d: new THREE.Vector3(0, 0, -1), t: 0, pret: false };
 let vitesse = 0; // m/s, lissée
 let rotation = 0; // rad/s, lissée
+/** Vitesse de rotation à l'écran (rad/s) : vers la droite, vers le haut. */
+const tourne = new THREE.Vector2();
+const inverse = new THREE.Quaternion();
 function mesurer(dt: number) {
   const c = cam();
   const p = c.position;
@@ -58,6 +65,12 @@ function mesurer(dt: number) {
     const k = 1 - Math.exp(-dt * 10);
     vitesse += (pas / dt - vitesse) * k;
     rotation += (tour / dt - rotation) * k;
+    // L'ancienne direction vue depuis la caméra actuelle : de combien l'image a glissé.
+    const l = avant.d.clone().applyQuaternion(inverse.copy(c.quaternion).invert());
+    const ax = tour < 0.5 ? Math.atan2(l.x, -l.z) : 0;
+    const ay = tour < 0.5 ? Math.atan2(l.y, -l.z) : 0;
+    tourne.x += (ax / dt - tourne.x) * k;
+    tourne.y += (ay / dt - tourne.y) * k;
   }
   avant.p.copy(p);
   avant.d.copy(d);
@@ -68,9 +81,11 @@ function mesurer(dt: number) {
 
 let phase = 0;
 let ampleur = 0; // 0 à l'arrêt, 1 en marche
-const sauve = { p: new THREE.Vector3(), q: new THREE.Quaternion(), applique: false };
+let gauche = false;
+const sauve = { p: new THREE.Vector3(), q: new THREE.Quaternion(), applique: false, fov: 0 };
 
-function balancer(dt: number) {
+/** La foulée avance (un demi-tour de phase par pas) ; un pas posé à chaque demi-tour. */
+function avancerPhase(dt: number) {
   const viser = THREE.MathUtils.clamp(vitesse / 1.2, 0, 1);
   ampleur += (viser - ampleur) * (1 - Math.exp(-dt * 6));
   if (ampleur < 0.002) {
@@ -79,12 +94,28 @@ function balancer(dt: number) {
   }
   // Foulée plus longue quand on va vite : la cadence reste naturelle.
   const foulee = 0.6 + 0.12 * vitesse;
+  const pasAvant = Math.floor(phase / Math.PI);
   phase += ((vitesse * dt) / foulee) * Math.PI;
-  const A = Math.min(0.06, 0.025 + 0.006 * vitesse) * ampleur; // haut-bas (m)
+  if (Math.floor(phase / Math.PI) !== pasAvant && vitesse > 0.5 && reglages.pas) {
+    gauche = !gauche;
+    jouerPas(THREE.MathUtils.clamp(0.6 + vitesse / 8, 0.6, 1.2), gauche);
+  }
+}
+
+function garder() {
+  if (sauve.applique) return;
   const c = cam();
   sauve.p.copy(c.position);
   sauve.q.copy(c.quaternion);
+  sauve.fov = monde.camera.threePersp.fov;
   sauve.applique = true;
+}
+
+function balancer() {
+  if (!ampleur) return;
+  const A = Math.min(0.06, 0.025 + 0.006 * vitesse) * ampleur; // haut-bas (m)
+  const c = cam();
+  garder();
   c.updateMatrixWorld();
   const droite = new THREE.Vector3().setFromMatrixColumn(c.matrixWorld, 0);
   // Un creux à chaque pas, un aller-retour de côté tous les deux pas.
@@ -94,13 +125,97 @@ function balancer(dt: number) {
   c.rotateZ(THREE.MathUtils.degToRad(0.45) * ampleur * Math.sin(phase));
   c.updateMatrixWorld();
 }
+/** En courant (Maj), l'angle de vue s'élargit un peu (jusqu'à +9°), puis revient en douceur. */
+let elan = 0;
+function elargir(dt: number) {
+  const viser = courseEnCours() && vitesse > 0.8 ? 1 : 0;
+  elan += (viser - elan) * (1 - Math.exp(-dt * (viser > elan ? 4 : 3)));
+  if (elan < 0.003) {
+    elan = 0;
+    return;
+  }
+  const persp = monde.camera.threePersp;
+  if (cam() !== persp) return;
+  garder();
+  persp.fov = Math.min(170, sauve.fov + 9 * elan);
+  persp.updateProjectionMatrix();
+}
+
 function retablir() {
   if (!sauve.applique) return;
   const c = cam();
   c.position.copy(sauve.p);
   c.quaternion.copy(sauve.q);
   c.updateMatrixWorld();
+  const persp = monde.camera.threePersp;
+  if (persp.fov !== sauve.fov) {
+    persp.fov = sauve.fov;
+    persp.updateProjectionMatrix();
+  }
   sauve.applique = false;
+}
+
+// --- Bruit de pas -----------------------------------------------------------------------
+// Un frottement (bruit filtré) et un choc sourd (note grave qui descend), légèrement à
+// gauche puis à droite. Rien à télécharger.
+
+let son: AudioContext | null = null;
+let bruit: AudioBuffer | null = null;
+function preparerSon() {
+  try {
+    if (!son) {
+      const C = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!C) return;
+      son = new C();
+      bruit = son.createBuffer(1, Math.round(son.sampleRate * 0.2), son.sampleRate);
+      const donnees = bruit.getChannelData(0);
+      for (let i = 0; i < donnees.length; i++) donnees[i] = Math.random() * 2 - 1;
+    }
+    if (son.state === "suspended") void son.resume();
+  } catch {
+    son = null;
+  }
+}
+// Réglage retenu d'une visite précédente : le son démarre au premier geste.
+for (const type of ["pointerdown", "keydown"] as const) {
+  window.addEventListener(type, () => reglages.pas && (!son || son.state !== "running") && preparerSon(), { passive: true });
+}
+
+function jouerPas(fort: number, aGauche: boolean) {
+  const a = son;
+  if (!a || a.state !== "running" || !bruit) return;
+  const t = a.currentTime;
+  const sortie = a.createGain();
+  sortie.gain.value = 0.2 * fort;
+  const cote = a.createStereoPanner();
+  cote.pan.value = aGauche ? -0.18 : 0.18;
+  sortie.connect(cote).connect(a.destination);
+  // Frottement de la semelle.
+  const frotte = a.createBufferSource();
+  frotte.buffer = bruit;
+  frotte.playbackRate.value = 0.85 + Math.random() * 0.3;
+  const filtre = a.createBiquadFilter();
+  filtre.type = "bandpass";
+  filtre.frequency.value = 800 + Math.random() * 600;
+  filtre.Q.value = 0.8;
+  const env = a.createGain();
+  env.gain.setValueAtTime(0.0001, t);
+  env.gain.exponentialRampToValueAtTime(0.7, t + 0.006);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+  frotte.connect(filtre).connect(env).connect(sortie);
+  frotte.start(t);
+  frotte.stop(t + 0.15);
+  // Choc sourd du talon.
+  const talon = a.createOscillator();
+  talon.frequency.setValueAtTime(115 + Math.random() * 20, t);
+  talon.frequency.exponentialRampToValueAtTime(50, t + 0.09);
+  const env2 = a.createGain();
+  env2.gain.setValueAtTime(0.0001, t);
+  env2.gain.exponentialRampToValueAtTime(1, t + 0.005);
+  env2.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+  talon.connect(env2).connect(sortie);
+  talon.start(t);
+  talon.stop(t + 0.12);
 }
 
 // --- Flou des bords ---------------------------------------------------------------------
@@ -111,6 +226,7 @@ const matFlou = new THREE.ShaderMaterial({
     resolution: { value: new THREE.Vector2(1, 1) },
     rayon: { value: 12 },
     force: { value: 0.7 },
+    trainee: { value: new THREE.Vector2() },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -123,6 +239,7 @@ const matFlou = new THREE.ShaderMaterial({
     uniform vec2 resolution;
     uniform float rayon;
     uniform float force;
+    uniform vec2 trainee;
     varying vec2 vUv;
     void main() {
       vec2 c = vUv - 0.5;
@@ -142,6 +259,17 @@ const matFlou = new THREE.ShaderMaterial({
           somme += textureLod(tImage, vUv + o, lod).rgb;
         }
         col = mix(col, somme / 9.0, smoothstep(0.75, 3.0, r));
+      }
+      // En tournant vite : l'image file dans le sens du mouvement, surtout sur les bords.
+      vec2 t = trainee * mix(0.45, 1.0, zone);
+      float lt = length(t);
+      if (lt > 1.0) {
+        float lodm = log2(max(lt / 7.0, 1.0));
+        vec3 s = vec3(0.0);
+        for (int i = 0; i < 7; i++) {
+          s += textureLod(tImage, vUv + t * (float(i) / 6.0 - 0.5) / resolution, lodm).rgb;
+        }
+        col = mix(col, s / 7.0, smoothstep(1.0, 6.0, lt));
       }
       // Vignette : les coins s'assombrissent un peu.
       col *= 1.0 - 0.32 * force * smoothstep(0.55, 1.15, d);
@@ -181,6 +309,12 @@ function flouter(dt: number) {
   matFlou.uniforms.resolution.value.copy(taille);
   matFlou.uniforms.rayon.value = taille.y * 0.014;
   matFlou.uniforms.force.value = force;
+  // Traînée : le glissement de l'image pendant 1/45 s, en pixels (borné).
+  const persp = monde.camera.threePersp;
+  const focale = cam() === persp ? taille.y / 2 / Math.tan(THREE.MathUtils.degToRad(persp.fov) / 2) : 0;
+  const tr = matFlou.uniforms.trainee.value as THREE.Vector2;
+  tr.set(tourne.x, tourne.y).multiplyScalar(focale / 45);
+  if (tr.length() > taille.y * 0.04) tr.setLength(taille.y * 0.04);
   const auto = r.autoClear;
   r.autoClear = false;
   quad.render(r);
@@ -198,15 +332,21 @@ monde.renderer!.onBeforeUpdate.add(() => {
   const t = performance.now();
   if (debutImage >= 0 && t - debutImage < 100) return;
   debutImage = t;
-  dt = dernier ? Math.min(0.1, (t - dernier) / 1000) : 0;
+  // Vrai temps écoulé (borné à 0,5 s) : la vitesse mesurée reste juste même si une image tarde.
+  dt = dernier ? Math.min(0.5, (t - dernier) / 1000) : 0;
   dernier = t;
-  if (!enMarche() || !(reglages.marche || reglages.flou)) {
+  if (!enMarche() || !(reglages.marche || reglages.flou || reglages.pas)) {
     avant.pret = false;
-    vitesse = rotation = ampleur = 0;
+    vitesse = rotation = ampleur = elan = 0;
+    tourne.set(0, 0);
     return;
   }
   mesurer(dt);
-  if (reglages.marche) balancer(dt);
+  avancerPhase(dt);
+  if (reglages.marche) {
+    balancer();
+    elargir(dt);
+  }
 });
 monde.renderer!.onAfterUpdate.add(() => {
   try {
@@ -216,3 +356,6 @@ monde.renderer!.onAfterUpdate.add(() => {
     debutImage = -1;
   }
 });
+
+/** Pour les essais : état mesuré. */
+export const etatEffets = () => ({ vitesse, rotation, phase, ampleur, elan, son: son?.state ?? "aucun" });

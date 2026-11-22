@@ -66,4 +66,5 @@ if (import.meta.env.DEV) {
   (window as any).__visio = { fragments, monde, maquettes, lanceur };
   import("./apparence").then((a) => ((window as any).__visio.apparence = a));
   import("./niveaux").then((n) => ((window as any).__visio.niveaux = n));
+  import("./effets").then((e) => ((window as any).__visio.effets = e));
 }

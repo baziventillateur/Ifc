@@ -12,6 +12,7 @@
 // personnes invitées les retrouvent sur tous leurs appareils. Maquette d'essai : sur cet
 // écran seulement.
 import * as THREE from "three";
+import { jouerBruitage } from "./sons";
 import {
   ajusterDecalage,
   alerte,
@@ -150,6 +151,7 @@ async function envoyer(cap: Capture, image: Blob, petite: Blob) {
 }
 
 function flash() {
+  jouerBruitage("photo");
   const f = cree("div", "capture-flash");
   document.body.append(f);
   f.addEventListener("animationend", () => f.remove());
@@ -768,6 +770,7 @@ export async function prendrePhoto() {
     const vue = vueActuelle();
     declencheur.disabled = true;
     ecran.classList.add("eclair");
+    jouerBruitage("photo");
     let photo: Blob | null = null;
     const piste = flux.getVideoTracks()[0];
     const Capture = (window as unknown as { ImageCapture?: new (t: MediaStreamTrack) => { takePhoto(): Promise<Blob> } })

@@ -4,3 +4,15 @@ de crédit) :
 - « Impact Sounds » : footstep_concrete_000-004, footstep_snow_000-004
 - « RPG Audio » : footstep_0-9, cloth_1-4, belt_handle_1-2, handle_small_leather(_2)
 Les positions de chaque son dans le fichier sont dans src/effets.ts (SONS_PAS).
+
+Bruitages (bruitages.mp3) : saut et chute d'un étage en visite, maquette affichée / masquée.
+Les positions de chaque extrait sont dans src/sons.ts (SEGMENTS).
+- Kenney (www.kenney.nl), CC0 1.0 : « Interface Sounds » (maximize, minimize, open, close,
+  toggle, confirmation, back, switch), « RPG Audio » (cloth, beltHandle, metalClick,
+  metalLatch), « Impact Sounds » (impactPunch_heavy).
+- NOX SOUND, CC0 1.0 : « Footsteps » (Rock Jump Start / Jump Land).
+- Voix de saut : Dillon Becker, licence CC BY 4.0
+  (https://creativecommons.org/licenses/by/4.0/).
+- Voix de douleur à la réception : Michel Baradari, « 11 male human pain/death sounds »
+  (opengameart.org), licence CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/).
+Les extraits ont été raccourcis, normalisés et réunis en un seul fichier.

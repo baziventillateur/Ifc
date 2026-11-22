@@ -34,6 +34,7 @@ import { replierCalques } from "./maquettes";
 import { activerAvancement } from "./avancement";
 import { effetActif, reglerEffet, type Effet } from "./effets";
 import { fermerPlan, ouvrirPlan } from "./plan";
+import { jouerBruitage } from "./sons";
 import { prendrePhoto } from "./captures";
 import { inviterPleinEcran, pleinEcranModifie } from "./plein-ecran";
 import {
@@ -1023,10 +1024,13 @@ async function choisirNiveau(sol: Sol) {
   niveau = sol;
   if (enMarche) {
     if (arActif() && ancre && ancien) ancre.p0.y += sol.y - ancien.y;
-    // Changement de niveau en marchant : même endroit, autre étage (montée rapide).
+    // Changement de niveau en marchant : même endroit, autre étage. On saute pour monter,
+    // on se laisse tomber pour descendre (avec les bruitages choisis par l'administrateur).
     const p = controles.getPosition(new THREE.Vector3());
     if (arActif()) decaler(0, 0);
-    else monterVers(sol.y + yeux());
+    else if (volLibre() || !ancien || ancien === sol) monterVers(sol.y + yeux());
+    else if (sol.y > ancien.y) sauterVers(sol.y + yeux());
+    else chuterVers(sol.y + yeux());
     place = new THREE.Vector3(p.x, sol.y, p.z);
     alerte(`Niveau ${sol.nom}.`, 2000);
     dessiner();
@@ -1055,6 +1059,74 @@ function monterVers(y: number) {
     const c = controles.getTarget(new THREE.Vector3());
     void controles.setLookAt(p.x, y1, p.z, c.x, c.y + y1 - p.y, c.z, false);
     if (k < 1) requestAnimationFrame(pas);
+  };
+  requestAnimationFrame(pas);
+}
+
+/** Place l'œil à la hauteur y (et la cible d'autant), regard incliné de `hoche` mètres. */
+function poserOeil(y: number, hoche = 0) {
+  const p = controles.getPosition(new THREE.Vector3());
+  const c = controles.getTarget(new THREE.Vector3());
+  void controles.setLookAt(p.x, y, p.z, c.x, c.y + y - p.y + hoche, c.z, false);
+}
+
+/** Montée d'un étage : petite flexion, saut en cloche au-dessus du sol visé, réception souple. */
+function sauterVers(y: number) {
+  const id = ++montee;
+  const depart = controles.getPosition(new THREE.Vector3()).y;
+  const DUREE = 680;
+  const t0 = performance.now();
+  jouerBruitage("saut", { arrivee: (0.8 * DUREE) / 1000 });
+  let hocheAvant = 0;
+  const pas = (t: number) => {
+    if (id !== montee || !actif || etape !== "marche" || volLibre()) return;
+    const k = THREE.MathUtils.clamp((t - t0) / DUREE, 0, 1);
+    // Trajet : élan (12 %), vol (12–80 %), réception (80–100 %).
+    const v = THREE.MathUtils.clamp((k - 0.12) / 0.68, 0, 1);
+    let y1 = depart + (y - depart) * (1 - (1 - v) ** 3) + 0.22 * Math.sin(Math.PI * v);
+    if (k < 0.12) y1 -= 0.09 * Math.sin((Math.PI * k) / 0.12);
+    if (k > 0.8) y1 -= 0.07 * Math.sin((Math.PI * (k - 0.8)) / 0.2);
+    // Le regard plonge un peu à la réception, puis revient.
+    const hoche = k > 0.8 ? -0.12 * Math.sin((Math.PI * (k - 0.8)) / 0.2) : 0;
+    poserOeil(y1, hoche - hocheAvant);
+    hocheAvant = hoche;
+    if (k < 1) requestAnimationFrame(pas);
+  };
+  requestAnimationFrame(pas);
+}
+
+/** Descente d'un étage : petit appel, chute de plus en plus rapide, réception lourde (genoux, regard). */
+function chuterVers(y: number) {
+  const id = ++montee;
+  const depart = controles.getPosition(new THREE.Vector3()).y;
+  const APPEL = 0.12;
+  const h = Math.max(0.1, depart + 0.06 - y);
+  const chute = THREE.MathUtils.clamp(Math.sqrt((2 * h) / 9.81), 0.35, 1.1);
+  const RECEPTION = 0.62;
+  const total = APPEL + chute + RECEPTION;
+  const t0 = performance.now();
+  jouerBruitage("chute", { arrivee: APPEL + chute });
+  let hocheAvant = 0;
+  const pas = (t: number) => {
+    if (id !== montee || !actif || etape !== "marche" || volLibre()) return;
+    const s = Math.max(0, (t - t0) / 1000);
+    let y1 = y;
+    let hoche = 0;
+    if (s < APPEL) y1 = depart + 0.06 * Math.sin(((Math.PI / 2) * s) / APPEL);
+    else if (s < APPEL + chute) {
+      const u = (s - APPEL) / chute;
+      y1 = depart + 0.06 - h * u * u;
+    } else {
+      // Réception : on s'écrase vite (0,1 s), on se relève lentement, en secouant un peu.
+      const u = Math.min(1, (s - APPEL - chute) / RECEPTION);
+      const f = u < 0.16 ? Math.sin(((Math.PI / 2) * u) / 0.16) : Math.cos(((Math.PI / 2) * (u - 0.16)) / 0.84) ** 2;
+      y1 = y - 0.34 * f;
+      hoche = -0.3 * f + 0.04 * Math.sin(u * 38) * (1 - u);
+    }
+    poserOeil(y1, hoche - hocheAvant);
+    hocheAvant = hoche;
+    if (s < total) requestAnimationFrame(pas);
+    else if (hocheAvant) poserOeil(y, -hocheAvant);
   };
   requestAnimationFrame(pas);
 }
@@ -1159,6 +1231,14 @@ function listeNiveaux(action: (s: Sol) => void) {
 const lienPlan = {
   get niveaux() {
     return niveaux;
+  },
+  etage(sens: 1 | -1) {
+    if (actif && etape === "marche") changerNiveau(sens);
+  },
+  etagesDispo() {
+    if (!actif || etape !== "marche" || volLibre() || arActif() || !niveau) return null;
+    const i = niveaux.indexOf(niveau);
+    return { haut: i < niveaux.length - 1, bas: i > 0 };
   },
   allerA(sol: Sol, x: number, z: number) {
     if (!actif || etape !== "marche") return;

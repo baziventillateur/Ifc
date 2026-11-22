@@ -1,5 +1,6 @@
 // Chargement des maquettes (exemple, IFC, mémoire de l'appareil) et panneau « Maquettes ».
 import * as THREE from "three";
+import { jouerBruitage } from "./sons";
 import * as OBC from "@thatopen/components";
 import {
   alerte,
@@ -66,6 +67,10 @@ function majTitre() {
 }
 
 async function changerVisibilite(changements: [Maquette, boolean][], libelle = "affichage des maquettes") {
+  // Bruitage : une maquette qui apparaît, ou qui disparaît.
+  const allumees = changements.filter(([m, v]) => v && !m.modele.object.visible).length;
+  const eteintes = changements.filter(([m, v]) => !v && m.modele.object.visible).length;
+  if (allumees || eteintes) jouerBruitage(allumees ? "affiche" : "masque");
   enregistrer(libelle, () => {
     for (const [m, v] of changements) m.modele.object.visible = v;
   });

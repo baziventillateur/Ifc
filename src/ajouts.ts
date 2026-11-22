@@ -7,6 +7,7 @@
 // ne sont jamais touchées. Un ajout garde l'identifiant IFC de son modèle, sa position,
 // son orientation et ses cotes ; il est enregistré dans le projet (table « ajouts »).
 import * as THREE from "three";
+import { jouerBruitage } from "./sons";
 import { alerte, bouton, brancherProche, cree, el, monde, rafraichir } from "./noyau";
 import { changement, maquettes, visibles, type Maquette } from "./registre";
 import { definirModeClic, modeClicActif, selectionChangee, viser } from "./fiche";
@@ -312,6 +313,7 @@ async function poserIci(e: PointerEvent) {
   if (!v) return alerte("Touchez une surface de la maquette (sol, dalle…).", 2500);
   const id = crypto.randomUUID();
   changer(id, { ...p, p: v.point.toArray() as Donnees["p"], rot: angleFantome, echelle: [1, 1, 1] }, `pose de « ${p.nom} »`);
+  jouerBruitage("pose");
   terminerModes();
   choisir(id);
 }
@@ -324,6 +326,7 @@ function commencerDeplacement(id: string) {
     const cible = deplace;
     if (!v || !cible) return;
     terminerModes();
+    jouerBruitage("pose");
     modifier(cible, (d) => (d.p = v.point.toArray() as Donnees["p"]), "déplacement d'un objet");
   }, "move");
   majPanneau();
@@ -439,7 +442,9 @@ function tourner(degres: number) {
 
 function supprimer(id: string) {
   const a = ajouts.get(id);
-  if (a) changer(id, null, `suppression de « ${a.nom} »`);
+  if (!a) return;
+  jouerBruitage("suppression");
+  changer(id, null, `suppression de « ${a.nom} »`);
 }
 
 function dupliquer(id: string) {

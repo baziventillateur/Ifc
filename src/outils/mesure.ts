@@ -5,6 +5,7 @@
 // - Surface : polygone de points, aire (m²) et périmètre.
 // Tout est dessiné par-dessus l'image (SVG) : visible à travers les murs, net à tout zoom.
 import { completerTir } from "../deplacements";
+import { jouerBruitage } from "../sons";
 import * as THREE from "three";
 import * as FRAGS from "@thatopen/fragments";
 import * as OBC from "@thatopen/components";
@@ -403,6 +404,7 @@ async function toucher(e: PointerEvent) {
   if (reglages.mode === "distance") {
     if (!premier) {
       premier = v;
+      jouerBruitage("cote_point");
       majApercus();
       retracer();
       majActions();
@@ -415,6 +417,7 @@ async function toucher(e: PointerEvent) {
     calque.append(etiquette);
     const mesure: Distance = { type: "distance", ...m, trace: nouveauTraceDistance(), etiquette };
     mesures.push(mesure);
+    jouerBruitage("cote");
     tracerDistance(mesure.trace, mesure.etiquette, mesure);
     dessinerListe();
     return;
@@ -426,6 +429,7 @@ async function toucher(e: PointerEvent) {
     return;
   }
   polygone.push({ ...v, point: pointSurface(polygone[polygone.length - 1] ?? null, v.point) });
+  jouerBruitage("cote_point");
   majApercus();
   retracer();
   majActions();
@@ -450,6 +454,7 @@ function terminerSurface() {
     etiquette,
   };
   mesures.push(mesure);
+  jouerBruitage("cote");
   tracerSurface(mesure.trace, mesure.etiquette, points, true);
   dessinerListe();
 }
@@ -470,6 +475,7 @@ window.addEventListener(
 // --- Panneau ---------------------------------------------------------------------------
 
 function supprimer(m: Mesure) {
+  jouerBruitage("suppression");
   m.trace.remove();
   m.etiquette.remove();
   mesures.splice(mesures.indexOf(m), 1);

@@ -10,7 +10,7 @@
 // dessin n'est qu'un tracé de lignes, refait seulement quand la vue bouge.
 
 import * as THREE from "three";
-import { cree, monde, pause } from "./noyau";
+import { bouton, cree, monde, pause } from "./noyau";
 import { changement, visibles, type Maquette } from "./registre";
 import { boitesDe, decalageDe } from "./deplacements";
 import type { Sol } from "./niveaux";
@@ -153,6 +153,10 @@ type Visite = {
   niveaux: Sol[];
   /** Se rendre à un endroit d'un niveau (toucher sur le plan). */
   allerA: (sol: Sol, x: number, z: number) => void;
+  /** Étage au-dessus (+1) ou en dessous (−1). */
+  etage?: (sens: 1 | -1) => void;
+  /** Étages accessibles (null : boutons cachés, par exemple en anti-gravité). */
+  etagesDispo?: () => { haut: boolean; bas: boolean } | null;
 };
 let visite: Visite | null = null;
 type PointPhoto = { id: string; p: [number, number, number] };
@@ -185,6 +189,27 @@ disque.append(toile, attente);
 const etiquette = cree("span", "radar-niveau");
 radar.append(disque, etiquette);
 disque.addEventListener("click", () => ouvrirGlobal());
+
+// Monter / descendre d'un étage : deux flèches à droite du radar.
+const FLECHE = (d: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const boutonsEtage = cree("div", "radar-etages");
+const btnHaut = bouton("radar-etage", "", () => visite?.etage?.(1), "Monter d'un étage (E ou Espace)");
+btnHaut.innerHTML = FLECHE('<path d="m5 11 7-7 7 7"/><path d="M12 20V4"/>');
+const btnBas = bouton("radar-etage", "", () => visite?.etage?.(-1), "Descendre d'un étage (C ou A)");
+btnBas.innerHTML = FLECHE('<path d="m19 13-7 7-7-7"/><path d="M12 4v16"/>');
+boutonsEtage.append(btnHaut, btnBas);
+radar.append(boutonsEtage);
+const etatEtages = { vu: "" };
+function majEtages() {
+  const d = visite?.etagesDispo?.() ?? null;
+  const cle = d ? `${d.haut}${d.bas}` : "";
+  if (cle === etatEtages.vu) return;
+  etatEtages.vu = cle;
+  boutonsEtage.hidden = !d;
+  btnHaut.disabled = !d?.haut;
+  btnBas.disabled = !d?.bas;
+}
 
 let niveauRadar: Sol | null = null;
 let traceRadar: Trace | null = null;
@@ -229,6 +254,7 @@ function suivreNiveau(y: number) {
 function tourDeRadar() {
   boucle = requestAnimationFrame(tourDeRadar);
   if (!visite || radar.hidden) return;
+  majEtages();
   const cam = monde.camera.three;
   suivreNiveau(cam.position.y);
   capRadar = cap(cam, capRadar);

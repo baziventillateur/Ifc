@@ -1,5 +1,6 @@
 // Toucher un élément : sélection, fiche d'informations et actions rapides.
 import { boiteFusion, completerTir } from "./deplacements";
+import { jouerBruitage } from "./sons";
 import * as THREE from "three";
 import type * as FRAGS from "@thatopen/fragments";
 import { ajusterDecalage, bouton, cadrer, cree, el, lanceur, monde, nombre, Signal } from "./noyau";
@@ -199,6 +200,7 @@ export async function montrerElement(idModele: string, idLocal: number, centrer 
   const m = maquettes.get(idModele);
   if (!m) return;
   courant = { modele: idModele, id: idLocal };
+  jouerBruitage("selection");
   await selectionner(courant);
   selectionChangee.emit(courant);
 

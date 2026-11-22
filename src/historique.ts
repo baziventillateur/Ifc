@@ -1,6 +1,7 @@
 // Historique commun des actions : Ctrl+Z annule la dernière, Ctrl+Y (ou Ctrl+Maj+Z)
 // la refait. Chaque module y note ses actions avec de quoi les défaire et les refaire.
 import { alerte, Signal } from "./noyau";
+import { jouerBruitage } from "./sons";
 
 type Action = {
   libelle: string;
@@ -57,6 +58,7 @@ function jouer(de: Action[], vers: Action[], sens: "annuler" | "refaire", silenc
     }
     rejoue = true;
     try {
+      if (!silencieux) jouerBruitage("annuler");
       const fait = Promise.resolve(action[sens]());
       vers.push(action);
       historiqueModifie.emit();

@@ -4788,6 +4788,34 @@ body.paysage.menu-visible .poignee-menu {
   gap: 6px;
   margin: 4px 0 12px;
 }
+.admin-son-groupe {
+  margin-top: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.admin-son-groupe[hidden],
+.admin-son[hidden] {
+  display: none;
+}
+.admin-son {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.admin-son-titre {
+  flex: none;
+  min-width: 128px;
+  font-size: 11.5px;
+  color: var(--doux);
+}
+.admin-son-puces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 .admin-volume {
   display: flex;
   align-items: center;
@@ -4808,4 +4836,63 @@ body.paysage.menu-visible .poignee-menu {
 .admin-reglage-etat {
   font-size: 11.5px;
   color: var(--doux);
+}
+
+/* Visite : monter / descendre d'un étage, à côté du radar. */
+.radar {
+  position: relative;
+}
+.radar-etages {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 0;
+  height: 112px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+}
+.radar-etages[hidden] {
+  display: none;
+}
+.radar-etage {
+  appearance: none;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  background: rgba(22, 27, 34, 0.82);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.12s, opacity 0.2s;
+}
+.radar-etage svg {
+  width: 20px;
+  height: 20px;
+}
+.radar-etage:active:not(:disabled) {
+  transform: scale(0.9);
+  background: var(--accent);
+}
+.radar-etage:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+@media (pointer: fine) {
+  .radar-etages {
+    height: 184px;
+  }
+  .radar-etage {
+    width: 40px;
+    height: 40px;
+  }
+  .radar-etage:hover:not(:disabled) {
+    background: rgba(40, 48, 60, 0.92);
+  }
 }

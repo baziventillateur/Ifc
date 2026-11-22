@@ -3,6 +3,7 @@
 // déplace perpendiculairement à la face. Les coupes horizontale (par niveau) et
 // verticale (selon X ou Y) sont rangées dans « Autres coupes ».
 import { completerTir } from "../deplacements";
+import { jouerBruitage } from "../sons";
 import * as THREE from "three";
 import { alerte, bouton, cree, el, lanceur, monde, nombre, rafraichir, versIfc } from "../noyau";
 import { definirModeClic } from "../fiche";
@@ -143,6 +144,7 @@ async function choisirFace(e: PointerEvent) {
   face.normale.copy(n).negate();
   face.decalage = 0;
   face.actif = true;
+  jouerBruitage("coupe");
   await appliquer();
   majFace();
 }

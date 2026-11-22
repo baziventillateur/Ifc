@@ -32,7 +32,7 @@ import {
 import { estAdmin, hauteurTelephone } from "./nuage/projets";
 import { replierCalques } from "./maquettes";
 import { activerAvancement } from "./avancement";
-import { effetActif, reglerEffet, type Effet } from "./effets";
+import { STYLES_PAS, choisirStylePas, ecouterPas, effetActif, reglerEffet, styleDesPas, type Effet } from "./effets";
 import { fermerPlan, ouvrirPlan } from "./plan";
 import { prendrePhoto } from "./captures";
 import { inviterPleinEcran, pleinEcranModifie } from "./plein-ecran";
@@ -1270,6 +1270,28 @@ function dessiner() {
         const deja = actions.querySelector(".visite-effets");
         if (deja) return deja.remove();
         const ligne = cree("div", "visite-effets");
+        // Son des pas : cinq choix, chacun se fait entendre au toucher.
+        const sonsPas = cree("div", "visite-angles");
+        const nomSon = cree("span", "visite-angles-titre", "");
+        const majNomSon = () => (nomSon.textContent = STYLES_PAS.find((x) => x.cle === styleDesPas())?.nom ?? "");
+        sonsPas.append(cree("span", "visite-angles-titre", "Pas"));
+        STYLES_PAS.forEach((st, i) => {
+          const b = puce(String(i + 1), () => {
+            choisirStylePas(st.cle);
+            if (!effetActif("pas")) {
+              reglerEffet("pas", true);
+              const c = ligne.querySelectorAll<HTMLInputElement>(".visite-case input")[2];
+              if (c) c.checked = true;
+            }
+            sonsPas.querySelectorAll(".visite-puce").forEach((x) => x.classList.toggle("actif", x === b));
+            majNomSon();
+            b.blur();
+            ecouterPas();
+          }, st.cle === styleDesPas() ? "actif" : "", st.nom);
+          sonsPas.append(b);
+        });
+        majNomSon();
+        sonsPas.append(nomSon);
         const angles = cree("div", "visite-angles");
         angles.append(cree("span", "visite-angles-titre", "Angle"));
         for (const a of ANGLES_VISITE) {
@@ -1298,6 +1320,7 @@ function dessiner() {
           caseEffet("marche", "Marche", "La vue se balance à chaque pas et s'élargit un peu quand on court"),
           caseEffet("flou", "Flou", "Centre net, bords flous et assombris, image qui file en tournant vite (demande un peu plus à la carte graphique)"),
           caseEffet("pas", "Bruit de pas", "Un pas léger à chaque foulée"),
+          sonsPas,
           angles,
         );
         actions.append(ligne);

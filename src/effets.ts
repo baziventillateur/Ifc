@@ -157,66 +157,136 @@ function retablir() {
 }
 
 // --- Bruit de pas -----------------------------------------------------------------------
-// Un frottement (bruit filtré) et un choc sourd (note grave qui descend), légèrement à
-// gauche puis à droite. Rien à télécharger.
+// Vrais enregistrements libres de droits (Kenney, CC0) regroupés dans public/sons/pas.mp3
+// (150 Ko, chargé seulement quand la case est cochée). Cinq sons au choix ; chaque pas
+// tire un enregistrement au hasard, légèrement varié (hauteur, force), à gauche puis à droite.
+
+export type StylePas = "tactique" | "lourd" | "beton" | "bottes" | "gravats";
+export const STYLES_PAS: { cle: StylePas; nom: string }[] = [
+  { cle: "tactique", nom: "Tactique (bottes + équipement)" },
+  { cle: "lourd", nom: "Tactique lourd" },
+  { cle: "beton", nom: "Béton" },
+  { cle: "bottes", nom: "Bottes" },
+  { cle: "gravats", nom: "Chantier (gravats)" },
+];
+/** Début et durée (s) de chaque enregistrement dans pas.mp3. */
+const SONS_PAS: Record<"beton" | "bottes" | "gravats" | "equipement", [number, number][]> = {"beton": [[0.0, 0.103], [0.253, 0.1047], [0.5078, 0.1099], [0.7676, 0.1076], [1.0252, 0.1115]], "bottes": [[1.2867, 0.2489], [1.6856, 0.2825], [2.118, 0.2422], [2.5102, 0.269], [2.9292, 0.3228], [3.4021, 0.2758], [3.8278, 0.2421], [4.22, 0.2556], [4.6256, 0.2556], [5.0312, 0.2152]], "gravats": [[5.3964, 0.3713], [5.9177, 0.3713], [6.439, 0.3713], [6.9603, 0.3713], [7.4817, 0.3713]], "equipement": [[8.003, 0.661], [8.814, 0.4151], [9.3791, 0.4766], [10.0057, 0.3844], [10.54, 0.2767], [10.9667, 0.4766], [11.5933, 0.3382], [12.0815, 0.3075]]};
+const VOLUME_PAS = 0.11;
+const CLE_STYLE = "nexbim-pas-son";
+let stylePas: StylePas = "tactique";
+try {
+  const lu = localStorage.getItem(CLE_STYLE) as StylePas | null;
+  if (lu && STYLES_PAS.some((x) => x.cle === lu)) stylePas = lu;
+} catch {
+  // Tactique par défaut.
+}
+export const styleDesPas = () => stylePas;
+export function choisirStylePas(s: StylePas) {
+  stylePas = s;
+  try {
+    localStorage.setItem(CLE_STYLE, s);
+  } catch {
+    // Gardé pour la session.
+  }
+}
 
 let son: AudioContext | null = null;
-let bruit: AudioBuffer | null = null;
+let tampon: AudioBuffer | null = null;
+let chargement: Promise<void> | null = null;
 function preparerSon() {
   try {
     if (!son) {
       const C = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!C) return;
       son = new C();
-      bruit = son.createBuffer(1, Math.round(son.sampleRate * 0.2), son.sampleRate);
-      const donnees = bruit.getChannelData(0);
-      for (let i = 0; i < donnees.length; i++) donnees[i] = Math.random() * 2 - 1;
     }
     if (son.state === "suspended") void son.resume();
+    if (!chargement) {
+      const a = son;
+      chargement = fetch("./sons/pas.mp3")
+        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+        .then((b) => a.decodeAudioData(b))
+        .then((t) => void (tampon = t))
+        .catch((e) => {
+          console.warn("sons de pas", e);
+          chargement = null;
+        });
+    }
   } catch {
     son = null;
   }
 }
 // Réglage retenu d'une visite précédente : le son démarre au premier geste.
 for (const type of ["pointerdown", "keydown"] as const) {
-  window.addEventListener(type, () => reglages.pas && (!son || son.state !== "running") && preparerSon(), { passive: true });
+  window.addEventListener(type, () => reglages.pas && (!son || son.state !== "running" || !tampon) && preparerSon(), { passive: true });
 }
 
-function jouerPas(fort: number, aGauche: boolean) {
+const derniers: Record<string, number> = {};
+/** Lit un enregistrement au hasard d'un groupe (jamais deux fois le même de suite). */
+function lire(groupe: keyof typeof SONS_PAS, vers: AudioNode, t: number, vitesse: number, gain: number, dureeMax?: number) {
+  const a = son!;
+  const liste = SONS_PAS[groupe];
+  let i = Math.floor(Math.random() * liste.length);
+  if (liste.length > 1 && i === derniers[groupe]) i = (i + 1) % liste.length;
+  derniers[groupe] = i;
+  const [debut, duree] = liste[i];
+  const d = Math.min(duree, dureeMax ?? duree);
+  const src = a.createBufferSource();
+  src.buffer = tampon;
+  src.playbackRate.value = vitesse;
+  const g = a.createGain();
+  g.gain.setValueAtTime(gain, t);
+  if (dureeMax && dureeMax < duree) {
+    // Coupé avant la fin : on l'éteint en douceur.
+    g.gain.setValueAtTime(gain, t + (d / vitesse) * 0.6);
+    g.gain.linearRampToValueAtTime(0, t + d / vitesse);
+  }
+  src.connect(g).connect(vers);
+  src.start(t, debut, d + 0.005);
+}
+
+function jouerPas(fort: number, aGauche: boolean, retard = 0) {
   const a = son;
-  if (!a || a.state !== "running" || !bruit) return;
-  const t = a.currentTime;
+  if (!a || a.state !== "running" || !tampon) return;
+  const t = a.currentTime + 0.005 + retard;
   const sortie = a.createGain();
-  sortie.gain.value = 0.2 * fort;
+  sortie.gain.value = VOLUME_PAS * fort * (0.85 + Math.random() * 0.3);
   const cote = a.createStereoPanner();
-  cote.pan.value = aGauche ? -0.18 : 0.18;
+  cote.pan.value = aGauche ? -0.16 : 0.16;
   sortie.connect(cote).connect(a.destination);
-  // Frottement de la semelle.
-  const frotte = a.createBufferSource();
-  frotte.buffer = bruit;
-  frotte.playbackRate.value = 0.85 + Math.random() * 0.3;
-  const filtre = a.createBiquadFilter();
-  filtre.type = "bandpass";
-  filtre.frequency.value = 800 + Math.random() * 600;
-  filtre.Q.value = 0.8;
-  const env = a.createGain();
-  env.gain.setValueAtTime(0.0001, t);
-  env.gain.exponentialRampToValueAtTime(0.7, t + 0.006);
-  env.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
-  frotte.connect(filtre).connect(env).connect(sortie);
-  frotte.start(t);
-  frotte.stop(t + 0.15);
-  // Choc sourd du talon.
-  const talon = a.createOscillator();
-  talon.frequency.setValueAtTime(115 + Math.random() * 20, t);
-  talon.frequency.exponentialRampToValueAtTime(50, t + 0.09);
-  const env2 = a.createGain();
-  env2.gain.setValueAtTime(0.0001, t);
-  env2.gain.exponentialRampToValueAtTime(1, t + 0.005);
-  env2.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
-  talon.connect(env2).connect(sortie);
-  talon.start(t);
-  talon.stop(t + 0.12);
+  const course = courseEnCours();
+  let entree: AudioNode = sortie;
+  if (stylePas === "lourd") {
+    // Plus grave et plus appuyé.
+    const grave = a.createBiquadFilter();
+    grave.type = "lowshelf";
+    grave.frequency.value = 180;
+    grave.gain.value = 7;
+    grave.connect(sortie);
+    entree = grave;
+  }
+  const groupe = stylePas === "beton" ? "beton" : stylePas === "gravats" ? "gravats" : "bottes";
+  const hauteur = (stylePas === "lourd" ? 0.86 : stylePas === "gravats" ? 0.92 : 1) * (0.95 + Math.random() * 0.1) * (course ? 1.06 : 1);
+  lire(groupe, entree, t, hauteur, 1);
+  // Façon jeu de tir : le bruit de l'équipement (sangles, tissu) suit souvent le pas.
+  if ((stylePas === "tactique" || stylePas === "lourd") && Math.random() < 0.65) {
+    const aigu = a.createBiquadFilter();
+    aigu.type = "highpass";
+    aigu.frequency.value = 1200;
+    aigu.connect(sortie);
+    lire("equipement", aigu, t + 0.02 + Math.random() * 0.04, 0.95 + Math.random() * 0.15, stylePas === "lourd" ? 0.32 : 0.26, 0.22);
+  }
+}
+
+/** Fait entendre trois pas du son choisi (au choix dans le panneau Mode jeu). */
+export function ecouterPas() {
+  preparerSon();
+  const essai = () => {
+    if (!son || son.state !== "running" || !tampon) return;
+    for (let k = 0; k < 3; k++) jouerPas(1, k % 2 === 0, k * 0.42);
+  };
+  if (tampon && son?.state === "running") essai();
+  else void chargement?.then(() => window.setTimeout(essai, 60));
 }
 
 // --- Flou des bords ---------------------------------------------------------------------

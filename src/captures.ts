@@ -30,6 +30,7 @@ import {
 } from "./noyau";
 import { modeClicActif, viser } from "./fiche";
 import { suspendreEffets } from "./effets";
+import { definirPhotosDuPlan } from "./plan";
 import { nuage } from "./nuage/client";
 import { monPrenom, projetCharge } from "./nuage/projets";
 import { quitterVisite, suspendreVisite, visiteActive } from "./visite";
@@ -1038,6 +1039,15 @@ monde.renderer!.onBeforeUpdate.add(() => {
     { capture: true },
   );
 }
+
+// Les photos situées sur le plan de localisation de la visite (points orange).
+definirPhotosDuPlan(
+  () => captures.filter((c) => c.genre === "photo" && c.vue).map((c) => ({ id: c.id, p: c.vue!.p as [number, number, number] })),
+  (id) => {
+    const c = captures.find((x) => x.id === id);
+    if (c) void voirPhoto(c);
+  },
+);
 
 // Visionneuse : caméra au point de vue de la photo, angle de vue de l'appareil, photo
 // par-dessus la maquette avec un curseur pour passer de l'une à l'autre.

@@ -33,6 +33,7 @@ import { estAdmin, hauteurTelephone } from "./nuage/projets";
 import { replierCalques } from "./maquettes";
 import { activerAvancement } from "./avancement";
 import { effetActif, reglerEffet, type Effet } from "./effets";
+import { fermerPlan, ouvrirPlan } from "./plan";
 import { prendrePhoto } from "./captures";
 import { inviterPleinEcran, pleinEcranModifie } from "./plein-ecran";
 import {
@@ -1154,7 +1155,36 @@ function listeNiveaux(action: (s: Sol) => void) {
   return liste;
 }
 
+// Plan de localisation (radar) pendant la marche : toucher un endroit du plan y emmène.
+const lienPlan = {
+  get niveaux() {
+    return niveaux;
+  },
+  allerA(sol: Sol, x: number, z: number) {
+    if (!actif || etape !== "marche") return;
+    const p = controles.getPosition(new THREE.Vector3());
+    const d = controles.getTarget(new THREE.Vector3()).sub(p);
+    const ancien = niveau;
+    // En anti-gravité, on garde sa hauteur au-dessus du sol du niveau.
+    const y = volLibre() && ancien ? p.y + sol.y - ancien.y : sol.y + yeux();
+    niveau = sol;
+    place = new THREE.Vector3(x, sol.y, z);
+    if (arActif() && ancre) {
+      ancre.p0.x += x - p.x;
+      ancre.p0.z += z - p.z;
+      ancre.p0.y += y - p.y;
+    } else {
+      void controles.setLookAt(x, y, z, x + d.x, y + d.y, z + d.z, false);
+    }
+    if (ancien !== sol) alerte(`Niveau ${sol.nom}.`, 1800);
+    dessiner();
+    void rafraichir();
+  },
+};
+
 function dessiner() {
+  if (actif && etape === "marche") ouvrirPlan(lienPlan);
+  else fermerPlan();
   panneau.classList.toggle("compact", etape === "marche" || etape === "ar");
   btnPhoto.hidden = !actif || etape !== "marche";
   // Hors de la marche, le panneau donne une consigne : on le déplie.
@@ -1407,6 +1437,7 @@ async function quitter() {
   inviterPleinEcran(false);
   geste = null;
   controles.enabled = true;
+  fermerPlan();
   definirVol(false);
   definirCourseManette(false);
   definirVisite(false);

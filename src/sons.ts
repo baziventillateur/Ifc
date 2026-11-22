@@ -9,6 +9,8 @@ type Couche = { s: Segment | Segment[]; t?: number; g?: number; r?: number; arri
 export type Evenement =
   | "saut"
   | "chute"
+  | "carte_ouvre"
+  | "carte_ferme"
   | "affiche"
   | "masque"
   | "selection"
@@ -73,6 +75,13 @@ const SEGMENTS = {
   ui_defile: [20.0034, 1.0115],
   ui_inter_3: [21.1349, 0.5036],
   ui_select_long: [21.7585, 0.3713],
+  livre_ouvrir: [22.2498, 0.151],
+  livre_fermer: [22.5208, 0.2306],
+  page_1: [22.8714, 0.6948],
+  page_2: [23.6862, 0.4305],
+  livre_poser: [24.2367, 0.2767],
+  cuir: [24.6334, 0.2965],
+  ceinture: [25.0499, 0.7225],
 } as const;
 
 const AUCUN: Choix = { cle: "aucun", nom: "Aucun", couches: [] };
@@ -156,6 +165,54 @@ export const BRUITAGES: Record<Evenement, { groupe: string; titre: string; choix
           { s: "voix_mal_2", arrivee: true, t: 0.05, g: 0.45, r: 1.05 },
         ],
       },
+      AUCUN,
+    ],
+  },
+  carte_ouvre: {
+    groupe: "Carte",
+    titre: "Ouverture de la carte",
+    choix: [
+      {
+        cle: "papier",
+        nom: "Carte papier",
+        couches: [
+          { s: "page_1", g: 0.55 },
+          { s: "cuir", g: 0.22, r: 1.1 },
+        ],
+      },
+      {
+        cle: "tablette",
+        nom: "Tablette",
+        couches: [
+          { s: "clic_metal", g: 0.3, r: 1.4 },
+          { s: "ui_max_4", t: 0.03, g: 0.5 },
+        ],
+      },
+      { cle: "numerique", nom: "Numérique", couches: [{ s: "ui_ouvrir", g: 0.5 }] },
+      AUCUN,
+    ],
+  },
+  carte_ferme: {
+    groupe: "Carte",
+    titre: "Fermeture de la carte",
+    choix: [
+      {
+        cle: "papier",
+        nom: "Carte papier",
+        couches: [
+          { s: "page_2", g: 0.5 },
+          { s: "livre_fermer", t: 0.12, g: 0.45 },
+        ],
+      },
+      {
+        cle: "tablette",
+        nom: "Tablette",
+        couches: [
+          { s: "loquet", g: 0.3, r: 1.3 },
+          { s: "ui_min_4", t: 0.02, g: 0.5 },
+        ],
+      },
+      { cle: "numerique", nom: "Numérique", couches: [{ s: "ui_fermer", g: 0.5 }] },
       AUCUN,
     ],
   },
@@ -319,10 +376,24 @@ const EVENEMENTS = Object.keys(BRUITAGES) as Evenement[];
 const choisis = Object.fromEntries(EVENEMENTS.map((e) => [e, BRUITAGES[e].choix[0].cle])) as Record<Evenement, string>;
 let volume = 0.6;
 
+/** Sons importés par l'administrateur (adresse publique), choisis sous la clé « perso ». */
+const perso: Partial<Record<Evenement, string>> = {};
+export const PERSO = "perso";
+export const sonPerso = (e: Evenement) => perso[e] ?? null;
+export function definirSonPerso(e: Evenement, adresse: string | null) {
+  if (adresse && /^https:\/\//.test(adresse)) perso[e] = adresse;
+  else {
+    delete perso[e];
+    if (choisis[e] === PERSO) choisis[e] = BRUITAGES[e].choix[0].cle;
+  }
+}
+export const sonsPerso = () => ({ ...perso });
+
 export const choixBruitage = (e: Evenement) => choisis[e];
 export const volumeBruitages = () => volume;
 export function choisirBruitage(e: Evenement, cle: string) {
-  if (BRUITAGES[e]?.choix.some((c) => c.cle === cle)) choisis[e] = cle;
+  if (!BRUITAGES[e]) return;
+  if (cle === PERSO ? !!perso[e] : BRUITAGES[e].choix.some((c) => c.cle === cle)) choisis[e] = cle;
 }
 export function definirVolumeBruitages(v: number) {
   volume = Math.min(1, Math.max(0, v));
@@ -390,10 +461,53 @@ function jouerCouches(couches: Couche[], arrivee: number) {
  * Joue le bruitage choisi pour un événement. `arrivee` : secondes avant la réception (saut,
  * chute) ; `choix` : un bruitage précis (écoute dans le panneau admin).
  */
+// Sons importés : chargés à la première lecture, puis gardés.
+const tamponsPerso = new Map<string, Promise<AudioBuffer | null>>();
+function tamponPerso(adresse: string) {
+  let t = tamponsPerso.get(adresse);
+  if (!t && son) {
+    const a = son;
+    t = fetch(adresse)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+      .then((b) => a.decodeAudioData(b))
+      .catch((err) => {
+        console.warn("son importé", err);
+        tamponsPerso.delete(adresse);
+        return null;
+      });
+    tamponsPerso.set(adresse, t);
+  }
+  return t ?? Promise.resolve(null);
+}
+function jouerPerso(e: Evenement, adresse: string, arrivee: number, apercu: boolean) {
+  preparer();
+  const demande = performance.now();
+  void Promise.all([tamponPerso(adresse), son?.resume()]).then(([t]) => {
+    const a = son;
+    const retard = (performance.now() - demande) / 1000;
+    // Un son qui arrive trop tard n'a plus de sens (sauf l'écoute dans le panneau admin).
+    if (!t || !a || retard > (apercu ? 10 : 2)) return;
+    const src = a.createBufferSource();
+    src.buffer = t;
+    const g = a.createGain();
+    g.gain.value = volume * 0.8;
+    src.connect(g).connect(a.destination);
+    // La chute se fait entendre à la réception ; les autres tout de suite.
+    src.start(a.currentTime + 0.01 + (e === "chute" ? Math.max(0, arrivee - retard) : 0));
+  });
+}
+
 const derniers = new Map<Evenement, number>();
 export function jouerBruitage(e: Evenement, o: { arrivee?: number; choix?: string } = {}) {
-  const choix = BRUITAGES[e].choix.find((c) => c.cle === (o.choix ?? choisis[e]));
-  if (!choix?.couches.length || (!o.choix && volume <= 0)) return;
+  const cle = o.choix ?? choisis[e];
+  if (!o.choix && volume <= 0) return;
+  if (cle === PERSO) {
+    const adresse = perso[e];
+    if (adresse) jouerPerso(e, adresse, o.arrivee ?? 0, !!o.choix);
+    return;
+  }
+  const choix = BRUITAGES[e].choix.find((c) => c.cle === cle);
+  if (!choix?.couches.length) return;
   // Pas de rafale (sélections enchaînées par programme, par exemple).
   const maintenant = performance.now();
   if (maintenant - (derniers.get(e) ?? -1e9) < 90) return;

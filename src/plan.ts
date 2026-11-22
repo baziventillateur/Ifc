@@ -10,6 +10,7 @@
 // dessin n'est qu'un tracé de lignes, refait seulement quand la vue bouge.
 
 import * as THREE from "three";
+import { jouerBruitage } from "./sons";
 import { bouton, cree, monde, pause } from "./noyau";
 import { changement, visibles, type Maquette } from "./registre";
 import { boitesDe, decalageDe } from "./deplacements";
@@ -394,10 +395,20 @@ const corps = cree("div", "plan-global-corps");
 const toileGlobale = cree("canvas", "plan-global-toile");
 const attenteGlobale = cree("span", "plan-global-attente", "Plan en préparation…");
 const zone = cree("div", "plan-global-zone");
-zone.append(toileGlobale, attenteGlobale);
+// Loupe : + / − et retour à 1× (aussi au pincement, à la molette et au clavier).
+const loupeBtns = cree("div", "plan-global-loupe");
+const btnPlus = bouton("plan-global-loupe-btn", "+", () => zoomerCentre(1.6), "Zoomer (+)");
+const btnMoins = bouton("plan-global-loupe-btn", "−", () => zoomerCentre(1 / 1.6), "Reculer (−)");
+const btnUn = bouton("plan-global-loupe-btn un", "1×", () => remettreLoupe(), "Revenir au plan entier");
+loupeBtns.append(btnPlus, btnMoins, btnUn);
+zone.append(toileGlobale, attenteGlobale, loupeBtns);
 const etages = cree("div", "plan-global-etages");
 corps.append(zone, etages);
-const aide = cree("p", "plan-global-aide", "Touchez un endroit du plan pour vous y rendre · Échap ou ✕ pour revenir");
+const aide = cree(
+  "p",
+  "plan-global-aide",
+  "Touchez un endroit pour vous y rendre · Pincez ou molette pour zoomer, glissez pour déplacer · Échap ou ✕ pour revenir",
+);
 boite.append(entete, corps, aide);
 fond.append(boite);
 document.body.append(fond);
@@ -409,12 +420,102 @@ let traceGlobale: Trace | null = null;
 let vers = { echelle: 1, ox: 0, oy: 0 };
 let boucleGlobale = 0;
 
+// --- Loupe de la carte : zoom autour d'un point, déplacement ------------------------------
+const ZOOM_MAX = 14;
+/** Agrandissement et décalage (en pixels) appliqués par-dessus le cadrage du plan. */
+const loupe = { z: 1, tx: 0, ty: 0 };
+function majLoupe() {
+  btnPlus.disabled = loupe.z >= ZOOM_MAX - 1e-3;
+  btnMoins.disabled = loupe.z <= 1 + 1e-3;
+  btnUn.hidden = loupe.z <= 1 + 1e-3 && Math.abs(loupe.tx) + Math.abs(loupe.ty) < 1;
+}
+function remettreLoupe() {
+  loupe.z = 1;
+  loupe.tx = 0;
+  loupe.ty = 0;
+  majLoupe();
+  dessinerGlobal();
+}
+/** Zoome d'un facteur f en gardant immobile le point (px, py) de la carte. */
+function zoomer(f: number, px: number, py: number) {
+  const z = Math.min(ZOOM_MAX, Math.max(1, loupe.z * f));
+  const k = z / loupe.z;
+  loupe.tx = px - k * (px - loupe.tx);
+  loupe.ty = py - k * (py - loupe.ty);
+  loupe.z = z;
+  // Revenu à 1× par le zoom arrière : le plan se recentre.
+  if (z <= 1 + 1e-3 && f < 1) loupe.tx = loupe.ty = 0;
+  majLoupe();
+  dessinerGlobal();
+}
+function zoomerCentre(f: number) {
+  zoomer(f, zone.clientWidth / 2, zone.clientHeight / 2);
+}
+
+const doigts = new Map<number, { x: number; y: number }>();
+let depart: { x: number; y: number } | null = null;
+let glisse = false;
+function posDans(e: PointerEvent | WheelEvent) {
+  const r = toileGlobale.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+toileGlobale.addEventListener("pointerdown", (e) => {
+  toileGlobale.setPointerCapture?.(e.pointerId);
+  doigts.set(e.pointerId, posDans(e));
+  if (doigts.size === 1) {
+    depart = posDans(e);
+    glisse = false;
+  } else glisse = true;
+});
+toileGlobale.addEventListener("pointermove", (e) => {
+  const avant = doigts.get(e.pointerId);
+  if (!avant) return;
+  const ici = posDans(e);
+  if (doigts.size === 1) {
+    if (!glisse && depart && Math.hypot(ici.x - depart.x, ici.y - depart.y) > 6) glisse = true;
+    if (glisse) {
+      loupe.tx += ici.x - avant.x;
+      loupe.ty += ici.y - avant.y;
+      majLoupe();
+    }
+  } else if (doigts.size === 2) {
+    // Pincement : zoom autour du milieu des deux doigts, qui entraîne aussi le plan.
+    const [a, b] = [...doigts.entries()].map(([id, p]) => (id === e.pointerId ? ici : p));
+    const [a0, b0] = [...doigts.values()];
+    const m0 = { x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2 };
+    const m1 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const d0 = Math.hypot(a0.x - b0.x, a0.y - b0.y);
+    const d1 = Math.hypot(a.x - b.x, a.y - b.y);
+    if (d0 > 10) zoomer(d1 / d0, m0.x, m0.y);
+    loupe.tx += m1.x - m0.x;
+    loupe.ty += m1.y - m0.y;
+    majLoupe();
+  }
+  doigts.set(e.pointerId, ici);
+});
+for (const type of ["pointerup", "pointercancel", "lostpointercapture"] as const) {
+  toileGlobale.addEventListener(type, (e) => {
+    doigts.delete(e.pointerId);
+    if (!doigts.size) depart = null;
+  });
+}
+zone.addEventListener(
+  "wheel",
+  (e) => {
+    e.preventDefault();
+    const p = posDans(e);
+    const pas = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    zoomer(Math.exp(-pas * 0.0018), p.x, p.y);
+  },
+  { passive: false },
+);
+
 function majModes() {
   btnSuivre.setAttribute("aria-pressed", String(modeGlobal === "suivre"));
   btnGlobal.setAttribute("aria-pressed", String(modeGlobal === "global"));
 }
-btnSuivre.addEventListener("click", () => ((modeGlobal = "suivre"), majModes(), dessinerGlobal()));
-btnGlobal.addEventListener("click", () => ((modeGlobal = "global"), majModes(), dessinerGlobal()));
+btnSuivre.addEventListener("click", () => ((modeGlobal = "suivre"), majModes(), remettreLoupe()));
+btnGlobal.addEventListener("click", () => ((modeGlobal = "global"), majModes(), remettreLoupe()));
 btnFermer.addEventListener("click", () => fermerGlobal());
 fond.addEventListener("pointerdown", (e) => e.target === fond && fermerGlobal());
 
@@ -448,8 +549,12 @@ function choisirNiveauGlobal(s: Sol) {
 export function ouvrirGlobal() {
   if (!visite || !fond.hidden) return;
   fond.hidden = false;
+  jouerBruitage("carte_ouvre");
   modeGlobal = "global";
   majModes();
+  loupe.z = 1;
+  loupe.tx = loupe.ty = 0;
+  majLoupe();
   choisirNiveauGlobal(niveauSousOeil(monde.camera.three.position.y) ?? visite.niveaux[0]);
   const tour = () => {
     boucleGlobale = requestAnimationFrame(tour);
@@ -460,6 +565,7 @@ export function ouvrirGlobal() {
 export function fermerGlobal() {
   if (fond.hidden) return;
   fond.hidden = true;
+  jouerBruitage("carte_ferme");
   cancelAnimationFrame(boucleGlobale);
 }
 
@@ -485,7 +591,13 @@ function dessinerGlobal() {
     cx = (t.min.x + t.max.x) / 2;
     cz = (t.min.y + t.max.y) / 2;
   }
-  vers = { echelle, ox: w / 2 - cx * echelle, oy: h / 2 - cz * echelle };
+  // Cadrage du plan, puis la loupe par-dessus.
+  vers = {
+    echelle: echelle * loupe.z,
+    ox: loupe.z * (w / 2 - cx * echelle) + loupe.tx,
+    oy: loupe.z * (h / 2 - cz * echelle) + loupe.ty,
+  };
+  echelle = vers.echelle;
   if (t) {
     ctx.save();
     ctx.translate(vers.ox, vers.oy);
@@ -504,6 +616,8 @@ function dessinerGlobal() {
 
 // Toucher sur le plan : une photo s'ouvre, ou l'on s'y rend.
 toileGlobale.addEventListener("click", (e) => {
+  // Un glissé ou un pincement n'est pas un toucher.
+  if (glisse) return void (glisse = false);
   if (!visite || !niveauGlobal) return;
   const r = toileGlobale.getBoundingClientRect();
   const sx = e.clientX - r.left;
@@ -522,7 +636,10 @@ window.addEventListener(
   (e) => {
     const cible = e.target as HTMLElement | null;
     if (cible?.closest?.("input, textarea, select, [contenteditable]")) return;
-    if (e.key === "Escape" && !fond.hidden) {
+    if (!fond.hidden && (e.key === "+" || e.key === "=" || e.key === "-")) {
+      e.preventDefault();
+      zoomerCentre(e.key === "-" ? 1 / 1.6 : 1.6);
+    } else if (e.key === "Escape" && !fond.hidden) {
       e.stopImmediatePropagation();
       e.preventDefault();
       fermerGlobal();

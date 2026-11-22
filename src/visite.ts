@@ -13,15 +13,21 @@ import * as THREE from "three";
 import { ajusterDecalage, alerte, bloquerDecalage, bouton, cree, definirProjection, el, estOrtho, monde, rafraichir } from "./noyau";
 import { definirModeClic, viser } from "./fiche";
 import {
+  ANGLES_VISITE,
   allureSuivante,
   allureVisite,
   angleDeVisite,
+  angleVisiteChoisi,
   bloquerUnDoigt,
+  choisirAngleVisite,
+  definirCourseManette,
   definirOeil,
   definirRegardExterne,
   definirVisite,
+  definirVol,
   modeOeil,
   vitesseVisite,
+  volLibre,
 } from "./navigation";
 import { estAdmin, hauteurTelephone } from "./nuage/projets";
 import { replierCalques } from "./maquettes";
@@ -252,8 +258,9 @@ async function entrerEnMarche(direction: THREE.Vector3, anime = true) {
   await rafraichir();
 }
 
-/** Déplace l'œil à plat (garde la hauteur du niveau et la direction du regard). */
-function decaler(dx: number, dz: number) {
+/** Déplace l'œil à plat (garde la hauteur du niveau et la direction du regard) ; en
+ * anti-gravité, il garde sa hauteur et peut aussi monter ou descendre. */
+function decaler(dx: number, dz: number, haut = 0) {
   if (!niveau) return;
   if (arActif() && ancre) {
     // La caméra AR place la vue à chaque image : on décale son point de départ.
@@ -263,7 +270,7 @@ function decaler(dx: number, dz: number) {
   }
   const position = controles.getPosition(new THREE.Vector3());
   const cible = controles.getTarget(new THREE.Vector3());
-  const dy = niveau.y + yeux() - position.y;
+  const dy = volLibre() ? haut : niveau.y + yeux() - position.y;
   position.x += dx;
   position.z += dz;
   position.y += dy;
@@ -282,12 +289,12 @@ manette.append(bille);
 manette.hidden = true;
 document.body.append(manette);
 const RAYON_MANETTE = 38;
-let poussee: { id: number; cx: number; cy: number; x: number; y: number } | null = null;
+let poussee: { id: number; cx: number; cy: number; x: number; y: number; course: boolean } | null = null;
 
 manette.addEventListener("pointerdown", (e) => {
   e.preventDefault();
   const r = manette.getBoundingClientRect();
-  poussee = { id: e.pointerId, cx: r.left + r.width / 2, cy: r.top + r.height / 2, x: 0, y: 0 };
+  poussee = { id: e.pointerId, cx: r.left + r.width / 2, cy: r.top + r.height / 2, x: 0, y: 0, course: false };
   manette.setPointerCapture(e.pointerId);
   bouger(e);
   if (!boucle) {
@@ -300,6 +307,14 @@ function bouger(e: PointerEvent) {
   let dx = e.clientX - poussee.cx;
   let dy = e.clientY - poussee.cy;
   const l = Math.hypot(dx, dy);
+  // Comme dans les jeux sur téléphone : manette poussée vers l'avant au-delà du bord,
+  // on court (la bille devient orange).
+  const course = l > RAYON_MANETTE * 1.5 && dy < -Math.abs(dx);
+  if (course !== poussee.course) {
+    poussee.course = course;
+    manette.classList.toggle("course", course);
+    definirCourseManette(course);
+  }
   if (l > RAYON_MANETTE) {
     dx = (dx / l) * RAYON_MANETTE;
     dy = (dy / l) * RAYON_MANETTE;
@@ -313,6 +328,8 @@ const lacher = (e: PointerEvent) => {
   if (!poussee || e.pointerId !== poussee.id) return;
   poussee = null;
   bille.style.transform = "";
+  manette.classList.remove("course");
+  definirCourseManette(false);
 };
 manette.addEventListener("pointerup", lacher);
 manette.addEventListener("pointercancel", lacher);
@@ -331,14 +348,16 @@ function avancer(t: number) {
   if (poussee && (poussee.x || poussee.y)) {
     encore = true;
     const position = controles.getPosition(new THREE.Vector3());
-    const devant = controles.getTarget(new THREE.Vector3()).sub(position).setY(0);
+    // En anti-gravité, on avance là où l'on regarde (vers le haut ou le bas).
+    const devant = controles.getTarget(new THREE.Vector3()).sub(position);
+    if (!volLibre()) devant.setY(0);
     if (devant.lengthSq() > 1e-6) {
       devant.normalize();
-      const droite = devant.clone().cross(new THREE.Vector3(0, 1, 0));
+      const droite = devant.clone().cross(new THREE.Vector3(0, 1, 0)).setY(0).normalize();
       const d = devant.multiplyScalar(-poussee.y).addScaledVector(droite, poussee.x);
       if (d.lengthSq() > 1) d.normalize();
-      d.multiplyScalar(vitesseVisite() * dt);
-      decaler(d.x, d.z);
+      d.multiplyScalar(vitesseVisite() * (poussee.course ? 2 : 1) * dt);
+      decaler(d.x, d.z, d.y);
     }
   } else if (poussee) {
     encore = true;
@@ -1039,6 +1058,46 @@ function monterVers(y: number) {
   requestAnimationFrame(pas);
 }
 
+/** Anti-gravité : on décolle du niveau, ou on retombe sur le sol en dessous. */
+function basculerVol() {
+  if (!actif || etape !== "marche" || arActif()) return;
+  const oui = !volLibre();
+  definirVol(oui);
+  if (oui) {
+    alerte(tactile() ? "Anti-gravité : avancez là où vous regardez." : "Anti-gravité : Z avance là où vous regardez, Espace / C pour monter et descendre.", 3000);
+  } else {
+    // Le sol sous les pieds : le niveau le plus haut sous l'œil.
+    const p = controles.getPosition(new THREE.Vector3());
+    const sol = niveauSous(p.y - yeux());
+    if (sol) {
+      niveau = sol;
+      place = new THREE.Vector3(p.x, sol.y, p.z);
+      tomberVers(sol.y + yeux());
+    }
+  }
+  dessiner();
+}
+
+/** Retombée comme en vrai (de plus en plus vite), ou petite montée si l'on est sous le sol. */
+function tomberVers(y: number) {
+  const depart = controles.getPosition(new THREE.Vector3()).y;
+  const h = depart - y;
+  if (h <= 0.05) return monterVers(y);
+  const id = ++montee;
+  const t0 = performance.now();
+  const DUREE = Math.min(1100, Math.max(250, Math.sqrt((2 * h) / 9.81) * 1000));
+  const pas = (t: number) => {
+    if (id !== montee || !actif || etape !== "marche" || volLibre()) return;
+    const k = THREE.MathUtils.clamp((t - t0) / DUREE, 0, 1);
+    const y1 = depart - h * k * k;
+    const p = controles.getPosition(new THREE.Vector3());
+    const c = controles.getTarget(new THREE.Vector3());
+    void controles.setLookAt(p.x, y1, p.z, c.x, c.y + y1 - p.y, c.z, false);
+    if (k < 1) requestAnimationFrame(pas);
+  };
+  requestAnimationFrame(pas);
+}
+
 /** Étage au-dessus (+1) ou en dessous (−1), au clavier. */
 function changerNiveau(sens: 1 | -1) {
   if (!niveau || enAnimation) return;
@@ -1101,7 +1160,8 @@ function dessiner() {
   // Hors de la marche, le panneau donne une consigne : on le déplie.
   if (etape !== "marche") replierPanneau(false);
   actions.replaceChildren();
-  titre.textContent = niveau && etape !== "niveau" ? `Visite · ${niveau.nom}` : "Visite";
+  titre.textContent =
+    etape === "marche" && volLibre() ? "Visite · anti-gravité" : niveau && etape !== "niveau" ? `Visite · ${niveau.nom}` : "Visite";
   switch (etape) {
     case "niveau":
       texte.textContent = niveaux.length
@@ -1127,8 +1187,12 @@ function dessiner() {
           : suiviGps
             ? "La vue suit votre position. Un doigt pour regarder autour de vous."
             : tactile()
-              ? "Manette pour avancer, un doigt pour regarder autour de vous."
-              : "ZQSD pour marcher (Maj : courir), flèches ou clic maintenu pour regarder. E / Espace : étage au-dessus, A / C : en dessous.";
+              ? volLibre()
+                ? "Anti-gravité : la manette avance là où vous regardez. Poussez au-delà du bord pour aller plus vite."
+                : "Manette pour avancer (poussez au-delà du bord pour courir), un doigt pour regarder."
+              : volLibre()
+                ? "Anti-gravité : Z avance là où vous regardez, Espace / C montent et descendent. G pour retomber."
+                : "ZQSD pour marcher (Maj ou Z deux fois : courir), flèches ou clic maintenu pour regarder. E / Espace : étage au-dessus, A / C : en dessous. G : anti-gravité.";
       const niveauBtn = puce("Niveau", () => {
         const deja = actions.querySelector(".visite-niveaux");
         if (deja) return deja.remove();
@@ -1171,11 +1235,21 @@ function dessiner() {
           );
         }
       }
-      // Effets « jeu vidéo » (effets.ts) : une petite ligne de cases à cocher.
-      const effets = puce("Effets", () => {
+      // Mode jeu : effets (effets.ts) et angle de vue, sans valeurs à saisir.
+      const effets = puce("Mode jeu", () => {
         const deja = actions.querySelector(".visite-effets");
         if (deja) return deja.remove();
         const ligne = cree("div", "visite-effets");
+        const angles = cree("div", "visite-angles");
+        angles.append(cree("span", "visite-angles-titre", "Angle"));
+        for (const a of ANGLES_VISITE) {
+          const b = puce(a.nom, () => {
+            choisirAngleVisite(a.cle);
+            angles.querySelectorAll(".visite-puce").forEach((x) => x.classList.toggle("actif", x === b));
+            b.blur();
+          }, a.cle === angleVisiteChoisi() ? "actif" : "", `Angle de vue ${a.nom.toLowerCase()}`);
+          angles.append(b);
+        }
         const caseEffet = (e: Effet, libelle: string, aide: string) => {
           const l = cree("label", "visite-case");
           l.title = aide;
@@ -1194,10 +1268,16 @@ function dessiner() {
           caseEffet("marche", "Marche", "La vue se balance à chaque pas et s'élargit un peu quand on court"),
           caseEffet("flou", "Flou", "Centre net, bords flous et assombris, image qui file en tournant vite (demande un peu plus à la carte graphique)"),
           caseEffet("pas", "Bruit de pas", "Un pas léger à chaque foulée"),
+          angles,
         );
         actions.append(ligne);
-      }, "", "Effets de jeu vidéo : marche, flou, bruit de pas");
+      }, "", "Mode jeu : angle de vue, marche, flou, bruit de pas");
       if (!ar) actions.append(effets);
+      if (!ar && !suiviGps) {
+        actions.append(
+          puce("Anti-gravité", () => basculerVol(), volLibre() ? "actif" : "", "Ne plus être collé au niveau : aller partout, monter, descendre (touche G)"),
+        );
+      }
       const vitesse = puce(`Vitesse : ${allureVisite()}`, () => {
         vitesse.textContent = `Vitesse : ${allureSuivante()}`;
       }, "", "Vitesse de déplacement : lente, moyenne ou rapide");
@@ -1327,6 +1407,8 @@ async function quitter() {
   inviterPleinEcran(false);
   geste = null;
   controles.enabled = true;
+  definirVol(false);
+  definirCourseManette(false);
   definirVisite(false);
   bloquerDecalage(false);
   monde.renderer!.setPlane(false, planCoupe);
@@ -1370,6 +1452,12 @@ window.addEventListener("keydown", (e) => {
   if (!actif || etape !== "marche" || suspendu || e.altKey || e.metaKey) return;
   const cible = e.target as HTMLElement | null;
   if (cible?.closest("input, textarea, select, [contenteditable], .dialogue")) return;
+  if (e.code === "KeyG" && !e.ctrlKey && !e.repeat && !arActif()) {
+    e.preventDefault();
+    return basculerVol();
+  }
+  // En anti-gravité, ces touches font monter et descendre (navigation.ts).
+  if (volLibre()) return;
   let sens: 1 | -1 | 0 = 0;
   if (e.code === "Space") sens = e.ctrlKey ? -1 : 1;
   else if (e.ctrlKey) return;

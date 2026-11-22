@@ -14,7 +14,7 @@
 import * as THREE from "three";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { monde } from "./noyau";
-import { courseEnCours, modeVisite } from "./navigation";
+import { courseEnCours, modeVisite, volLibre } from "./navigation";
 import { arActif } from "./suivi";
 
 export type Effet = "marche" | "flou" | "pas";
@@ -86,7 +86,8 @@ const sauve = { p: new THREE.Vector3(), q: new THREE.Quaternion(), applique: fal
 
 /** La foulée avance (un demi-tour de phase par pas) ; un pas posé à chaque demi-tour. */
 function avancerPhase(dt: number) {
-  const viser = THREE.MathUtils.clamp(vitesse / 1.2, 0, 1);
+  // En anti-gravité, on ne marche pas : ni balancement ni pas.
+  const viser = volLibre() ? 0 : THREE.MathUtils.clamp(vitesse / 1.2, 0, 1);
   ampleur += (viser - ampleur) * (1 - Math.exp(-dt * 6));
   if (ampleur < 0.002) {
     ampleur = 0;
@@ -96,7 +97,7 @@ function avancerPhase(dt: number) {
   const foulee = 0.6 + 0.12 * vitesse;
   const pasAvant = Math.floor(phase / Math.PI);
   phase += ((vitesse * dt) / foulee) * Math.PI;
-  if (Math.floor(phase / Math.PI) !== pasAvant && vitesse > 0.5 && reglages.pas) {
+  if (Math.floor(phase / Math.PI) !== pasAvant && vitesse > 0.5 && reglages.pas && !volLibre()) {
     gauche = !gauche;
     jouerPas(THREE.MathUtils.clamp(0.6 + vitesse / 8, 0.6, 1.2), gauche);
   }

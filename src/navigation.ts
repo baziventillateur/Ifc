@@ -214,60 +214,97 @@ window.addEventListener("pointercancel", (e) => {
 
 // --- Projection : un bouton rond à côté de l'œil ---------------------------------------
 // Toucher : bascule entre la vue orthogonale (sans perspective) et la perspective.
-// Appui long : deux angles de vue, normal (60°) et large (100°, pour les intérieurs) ;
-// en visite à la première personne : 100°, 120° et 150°.
+// Appui long : deux angles de vue, normal (60°) et large (100°, pour les intérieurs).
+// En visite à la première personne, trois angles nommés, comme dans les jeux de tir
+// (Call of Duty mesure l'angle à l'horizontale d'un écran 16:9 : 80° par défaut, réglable
+// de 60 à 120°) : serré 80°, normal 100°, grand angle 120°. Sur téléphone tenu droit,
+// l'angle s'applique à la hauteur de l'écran (le grand côté).
 // On glisse le doigt sur la valeur et on le lève, ou on la touche ensuite.
 // Les angles choisis sont gardés sur l'appareil.
 const ANGLES = [60, 100];
-const ANGLES_VISITE = [100, 120, 150];
+export type AngleVisite = "serre" | "normal" | "grand";
+export const ANGLES_VISITE: { cle: AngleVisite; nom: string; h: number }[] = [
+  { cle: "serre", nom: "Serré", h: 80 },
+  { cle: "normal", nom: "Normal", h: 100 },
+  { cle: "grand", nom: "Grand angle", h: 120 },
+];
 const CLE_ANGLE = "nexbim-angle";
-const CLE_ANGLE_VISITE = "nexbim-angle-visite";
+const CLE_ANGLE_VISITE = "nexbim-angle-visite-2";
 const plusProche = (liste: number[], v: number) =>
   liste.reduce((m, a) => (Math.abs(a - v) < Math.abs(m - v) ? a : m));
 let angle = 60;
-let angleVisite = 100;
+let angleVisite: AngleVisite = "normal";
 try {
   // Un ancien réglage (85°, 120°…) prend l'angle proposé le plus proche.
   const lu = Number(localStorage.getItem(CLE_ANGLE));
   if (lu > 0) angle = plusProche(ANGLES, lu);
-  const luVisite = Number(localStorage.getItem(CLE_ANGLE_VISITE));
-  if (luVisite > 0) angleVisite = plusProche(ANGLES_VISITE, luVisite);
+  const luVisite = localStorage.getItem(CLE_ANGLE_VISITE) as AngleVisite | null;
+  if (luVisite && ANGLES_VISITE.some((a) => a.cle === luVisite)) angleVisite = luVisite;
+  // Ancien réglage en degrés (100, 120, 150) : normal ou grand angle.
+  else if (Number(localStorage.getItem("nexbim-angle-visite")) >= 120) angleVisite = "grand";
 } catch {
   // Angles par défaut.
 }
-const angles = () => (visite ? ANGLES_VISITE : ANGLES);
+export const angleVisiteChoisi = () => angleVisite;
+/** Angle vertical de la caméra pour un angle de visite, selon la forme de l'écran. */
+function verticalDe(a: AngleVisite) {
+  const h = ANGLES_VISITE.find((x) => x.cle === a)!.h;
+  const taille = monde.renderer!.getSize();
+  if (taille.y > taille.x) return h; // téléphone tenu droit : le grand côté
+  return THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(h / 2)) * (9 / 16)));
+}
 /** Angle de vue de la visite (pour l'animation d'entrée). */
-export const angleDeVisite = () => angleVisite;
-const angleActuel = () => (visite ? angleVisite : angle);
+export const angleDeVisite = () => verticalDe(angleVisite);
+const angleActuel = () => (visite ? verticalDe(angleVisite) : angle);
 const btnProjection = document.getElementById("btn-projection");
 const ICONE_ORTHO =
   '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4v15h15"/><path d="M5 13h6v6"/></svg>';
 
 function appliquerAngle() {
   const cam = monde.camera.threePersp;
-  if (cam.fov === angleActuel()) return;
+  if (Math.abs(cam.fov - angleActuel()) < 0.01) return;
   cam.fov = angleActuel();
   cam.updateProjectionMatrix();
   void fragments.core.update(true);
 }
 
+/** Petit cône de vision, plus ou moins ouvert selon l'angle de visite. */
+function iconeAngle(a: AngleVisite) {
+  const [x1, y1, x2] = a === "serre" ? [8, 5, 16] : a === "normal" ? [4.5, 6, 19.5] : [2, 9, 22];
+  return `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M${x1} ${y1}L12 19L${x2} ${y1}"/></svg>`;
+}
+const nomAngle = (a: AngleVisite) => ANGLES_VISITE.find((x) => x.cle === a)!.nom;
+
 function majBoutonProjection() {
   if (!btnProjection) return;
   const ortho = estOrtho();
   btnProjection.classList.toggle("actif", ortho);
-  btnProjection.innerHTML = ortho ? ICONE_ORTHO : `<span>${angleActuel()}°</span>`;
+  btnProjection.innerHTML = ortho ? ICONE_ORTHO : visite ? iconeAngle(angleVisite) : `<span>${angle}°</span>`;
   btnProjection.title = ortho
     ? "Vue orthogonale (sans perspective). Toucher : perspective. Appui long : angle de vue."
-    : `Perspective ${angleActuel()}°. Toucher : vue orthogonale. Appui long : changer l'angle.`;
+    : visite
+      ? `Angle de vue : ${nomAngle(angleVisite).toLowerCase()}. Toucher : vue orthogonale. Appui long : changer l'angle.`
+      : `Perspective ${angle}°. Toucher : vue orthogonale. Appui long : changer l'angle.`;
 }
 
 const basculerProjection = () => void definirProjection(estOrtho() ? "Perspective" : "Orthographic");
 
 function choisirAngle(a: number) {
-  if (visite) angleVisite = a;
-  else angle = a;
+  angle = a;
   try {
-    localStorage.setItem(visite ? CLE_ANGLE_VISITE : CLE_ANGLE, String(a));
+    localStorage.setItem(CLE_ANGLE, String(a));
+  } catch {
+    // Gardé pour la session seulement.
+  }
+  appliquerAngle();
+  majBoutonProjection();
+  if (estOrtho()) void definirProjection("Perspective");
+}
+/** Angle de la visite : serré, normal ou grand angle (aussi depuis le panneau « Mode jeu »). */
+export function choisirAngleVisite(a: AngleVisite) {
+  angleVisite = a;
+  try {
+    localStorage.setItem(CLE_ANGLE_VISITE, a);
   } catch {
     // Gardé pour la session seulement.
   }
@@ -279,6 +316,8 @@ function choisirAngle(a: number) {
 appliquerAngle();
 majBoutonProjection();
 projectionModifiee.on(majBoutonProjection);
+// En tournant le téléphone, l'angle de visite se recalcule pour la nouvelle forme d'écran.
+window.addEventListener("resize", () => visite && appliquerAngle());
 
 let listeAngles: HTMLElement | null = null;
 function fermerAngles() {
@@ -301,12 +340,23 @@ function ouvrirAngles() {
   });
   ortho.innerHTML = `${ICONE_ORTHO}<span>Ortho</span>`;
   liste.append(ortho);
-  for (const a of angles()) {
-    const b = bouton("choix-angle-option" + (!estOrtho() && a === angleActuel() ? " actif" : ""), `${a}°`, () => {
-      fermerAngles();
-      choisirAngle(a);
-    });
-    liste.append(b);
+  if (visite) {
+    for (const a of ANGLES_VISITE) {
+      const b = bouton("choix-angle-option" + (!estOrtho() && a.cle === angleVisite ? " actif" : ""), "", () => {
+        fermerAngles();
+        choisirAngleVisite(a.cle);
+      });
+      b.innerHTML = `${iconeAngle(a.cle)}<span>${a.nom}</span>`;
+      liste.append(b);
+    }
+  } else {
+    for (const a of ANGLES) {
+      const b = bouton("choix-angle-option" + (!estOrtho() && a === angle ? " actif" : ""), `${a}°`, () => {
+        fermerAngles();
+        choisirAngle(a);
+      });
+      liste.append(b);
+    }
   }
   document.body.append(liste);
   const r = btnProjection.getBoundingClientRect();
@@ -439,7 +489,30 @@ const TOUCHES: Record<string, Sens> = {
   KeyQ: "bas",
 };
 const FLECHES = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
-const sensDe = (e: KeyboardEvent): Sens | undefined => TOUCHES[e.key] ?? TOUCHES[e.code];
+
+// Anti-gravité (visite) : on n'est plus collé au niveau. Z avance là où l'on regarde
+// (on monte en regardant vers le haut) ; Espace / E montent, C / A descendent.
+let vol = false;
+export const volLibre = () => vol && visite;
+export function definirVol(oui: boolean) {
+  vol = oui;
+}
+
+const sensDe = (e: KeyboardEvent): Sens | undefined => {
+  const s = TOUCHES[e.key] ?? TOUCHES[e.code];
+  if (s || !volLibre()) return s;
+  return e.code === "Space" ? "haut" : e.code === "KeyC" ? "bas" : undefined;
+};
+
+// Courir, comme dans les jeux : Maj maintenue (Call of Duty sur ordinateur), ou Z tapé
+// deux fois puis gardé enfoncé ; au téléphone, manette poussée au-delà du bord (visite.ts).
+let doubleZ = false;
+let dernierZ = 0;
+let courseManette = false;
+export function definirCourseManette(oui: boolean) {
+  courseManette = oui;
+}
+const enCourse = () => rapide || doubleZ;
 /** Touches enfoncées (par place sur le clavier) et le sens de chacune. */
 const enfoncees = new Map<string, Sens>();
 let rapide = false;
@@ -477,7 +550,9 @@ export function allureSuivante(): Allure {
 
 /** On court en visite : Maj tenue avec une touche de marche (pas les flèches du regard). */
 export function courseEnCours() {
-  if (!visite || !rapide) return false;
+  if (!visite) return false;
+  if (courseManette) return true;
+  if (!enCourse()) return false;
   for (const [code, s] of enfoncees) {
     if (FLECHES.has(code)) continue;
     if (s === "avant" || s === "arriere" || s === "gauche" || s === "droite") return true;
@@ -490,7 +565,7 @@ function pas(t: number) {
   if (!enfoncees.size) return;
   const dt = Math.min(0.25, (t - dernier) / 1000);
   dernier = t;
-  const facteur = rapide ? (visite ? 2 : 3) : 1;
+  const facteur = enCourse() ? (visite ? 2 : 3) : 1;
   const tete = oeil || visite;
   const marche = new Set<Sens>();
   const regarde = new Set<Sens>();
@@ -499,8 +574,10 @@ function pas(t: number) {
   const avance = sens(marche, "avant", "arriere");
   // Gauche / droite : pas de côté, comme dans un jeu vidéo (la souris sert à tourner la tête).
   const cote = sens(marche, "droite", "gauche");
-  // En visite, on reste à hauteur d'yeux : ces touches changent d'étage (visite.ts).
-  const monte = visite ? 0 : sens(marche, "haut", "bas");
+  // En visite, on reste à hauteur d'yeux : ces touches changent d'étage (visite.ts),
+  // sauf en anti-gravité où elles font monter et descendre.
+  const volant = volLibre();
+  const monte = visite && !volant ? 0 : sens(marche, "haut", "bas");
   const lacet = sens(regarde, "droite", "gauche");
   const tangage = sens(regarde, "arriere", "avant");
   if (lacet || tangage) {
@@ -511,15 +588,18 @@ function pas(t: number) {
   }
 
   if (avance || cote || monte) {
-    if (avance && monde.camera.projection.current === "Orthographic") {
-      // Sans perspective, avancer ne change rien à l'image : on agrandit la vue.
+    if (avance && !visite && monde.camera.projection.current === "Orthographic") {
+      // Sans perspective, avancer ne change rien à l'image : on agrandit la vue. En visite,
+      // on avance vraiment : la coupe suit l'œil (sinon elle restait en arrière).
       const cam = monde.camera.three as THREE.OrthographicCamera;
       void controles.zoomTo(cam.zoom * (1 + avance * dt * 1.2 * facteur), false);
     }
     const position = controles.getPosition(new THREE.Vector3());
     const cible = controles.getTarget(new THREE.Vector3());
-    // On marche à plat, dans la direction du regard.
-    const devant = cible.clone().sub(position).setY(0);
+    // On marche à plat, dans la direction du regard (en anti-gravité : droit devant soi,
+    // vers le haut ou le bas).
+    const devant = cible.clone().sub(position);
+    if (!volant) devant.setY(0);
     if (devant.lengthSq() < 1e-6) {
       monde.camera.three.updateMatrixWorld();
       devant.setFromMatrixColumn(monde.camera.three.matrixWorld, 1).setY(0);
@@ -529,7 +609,7 @@ function pas(t: number) {
     const d = devant.multiplyScalar(avance).addScaledVector(droite, cote);
     if (d.lengthSq() > 1) d.normalize();
     d.multiplyScalar((visite ? vitesseVisite() : VITESSE) * facteur * dt);
-    d.y += monte * VITESSE * 0.75 * facteur * dt;
+    d.y += monte * (visite ? vitesseVisite() : VITESSE * 0.75) * facteur * dt;
     position.add(d);
     cible.add(d);
     void controles.setLookAt(position.x, position.y, position.z, cible.x, cible.y, cible.z, false);
@@ -545,6 +625,13 @@ window.addEventListener("keydown", (e) => {
   if (cible?.closest("input, textarea, select, [contenteditable], .dialogue")) return;
   e.preventDefault();
   if (enfoncees.has(e.code)) return;
+  // Z tapé deux fois de suite (moins de 0,35 s) : on court tant qu'il reste enfoncé.
+  if (e.code === "KeyW" && !e.repeat) {
+    // Heure de la frappe (pas du traitement) : juste même si une image tarde.
+    const t = e.timeStamp;
+    doubleZ = t - dernierZ < 350;
+    dernierZ = t;
+  }
   if (!enfoncees.size) recentrerPivot();
   enfoncees.set(e.code, s);
   if (!boucle) {
@@ -554,9 +641,13 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", (e) => {
   rapide = e.shiftKey;
+  if (e.code === "KeyW") doubleZ = false;
   enfoncees.delete(e.code);
 });
-window.addEventListener("blur", () => enfoncees.clear());
+window.addEventListener("blur", () => {
+  enfoncees.clear();
+  doubleZ = rapide = false;
+});
 
 // --- Voir de très près sans que l'objet soit rogné -----------------------------------
 // La caméra ne dessine rien en deçà d'une distance minimale (1 m à l'origine) : en

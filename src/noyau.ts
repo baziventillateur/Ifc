@@ -66,6 +66,8 @@ monde.camera.controls.addEventListener("update", () => fragments.core.update());
 // de chaque pixel qui décide, donc ça suit la caméra sans ralentir.
 const proche = { uProche: { value: 0 }, uProcheForce: { value: 0.45 } };
 const reglageProche = { actif: false, distance: 0.5, force: 0.45 };
+/** Visite à la première personne : l'œil reste à sa place (voir definirVueFixe). */
+let vueFixe = false;
 
 /** Ajoute l'effet « objets proches » à un matériau (maquettes et éléments déplacés). */
 export function brancherProche(materiau: THREE.Material) {
@@ -100,9 +102,11 @@ export function brancherProche(materiau: THREE.Material) {
 }
 
 function majProche() {
-  // En vue orthogonale, la distance à la caméra ne veut rien dire : effet coupé.
+  // En vue orthogonale, la caméra est loin du bâtiment : effet coupé. Sauf en visite, où
+  // l'œil reste à sa place : la même règle qu'en perspective (les objets à moins de la
+  // distance réglée, devant soi, deviennent transparents).
   const ortho = monde.camera.projection.current === "Orthographic";
-  proche.uProche.value = reglageProche.actif && !ortho ? reglageProche.distance : 0;
+  proche.uProche.value = reglageProche.actif && (!ortho || vueFixe) ? reglageProche.distance : 0;
   proche.uProcheForce.value = reglageProche.force;
   void fragments.core.update(true);
 }
@@ -429,10 +433,10 @@ export function estOrtho() {
 
 let rayonAvantOrtho = 0;
 
-let vueFixe = false;
 /** Visite à la première personne : la caméra reste à l'œil quand on change de projection. */
 export function definirVueFixe(oui: boolean) {
   vueFixe = oui;
+  majProche();
 }
 
 /**

@@ -1,12 +1,12 @@
 // Projet dans le cloud : maquettes déposées, personnes invitées, compte, panneau admin.
 import {
-import { blocReglagesPas } from "../reglages-app";
   deplacementsModifies,
   exporter as exporterDeplacements,
   importer as importerDeplacements,
   type Donnees,
 } from "../deplacements";
 import type { User } from "@supabase/supabase-js";
+import { blocReglagesPas } from "../reglages-app";
 import { alerte, attente, bouton, cree, el, Signal } from "../noyau";
 import { maquettes as affichees } from "../registre";
 import {

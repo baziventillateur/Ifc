@@ -3342,6 +3342,12 @@ a.projet-ligne {
   display: none;
 }
 
+/* Mode drone : seconde manette, en bas à droite (au-dessus du panneau replié). */
+.manette.droite {
+  left: auto;
+  right: 14px;
+}
+
 .manette-bille {
   width: 40px;
   height: 40px;

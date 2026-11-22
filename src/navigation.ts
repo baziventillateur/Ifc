@@ -19,6 +19,7 @@ import {
   recentrerPivot,
 } from "./noyau";
 import { maquettes } from "./registre";
+import { commanderDrone } from "./drone";
 
 const canvas = monde.renderer!.three.domElement;
 const controles = monde.camera.controls;
@@ -542,9 +543,23 @@ const FLECHES = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 // Anti-gravité (visite) : on n'est plus collé au niveau. Z avance là où l'on regarde
 // (on monte en regardant vers le haut) ; Espace / E montent, C / A descendent.
 let vol = false;
-export const volLibre = () => vol && visite;
+// Mode drone : sans gravité aussi, mais piloté comme un drone (deux manettes, élan, inertie).
+let drone = false;
+export const volLibre = () => (vol || drone) && visite;
+export const modeDrone = () => drone && visite;
 export function definirVol(oui: boolean) {
   vol = oui;
+  if (oui) drone = false;
+}
+export function definirDrone(oui: boolean) {
+  drone = oui;
+  if (oui) vol = false;
+  else commanderDrone("clavier", null);
+}
+/** Tourne la vue sur l'axe vertical (degrés, positif vers la droite), même suivie par les capteurs. */
+export function tournerRegard(lacet: number) {
+  if (regardExterne) regardExterne(lacet);
+  else tournerTete(lacet, 0);
 }
 
 const sensDe = (e: KeyboardEvent): Sens | undefined => {
@@ -627,8 +642,16 @@ function pas(t: number) {
   // sauf en anti-gravité où elles font monter et descendre.
   const volant = volLibre();
   const monte = visite && !volant ? 0 : sens(marche, "haut", "bas");
-  const lacet = sens(regarde, "droite", "gauche");
+  let lacet = sens(regarde, "droite", "gauche");
   const tangage = sens(regarde, "arriere", "avant");
+  if (modeDrone()) {
+    // Drone : poussée avec élan ; ← → font pivoter le drone sur place (avec inertie aussi).
+    commanderDrone("clavier", { avance, cote, monte, lacet, vitesse: vitesseVisite() * facteur, aPlat: true });
+    lacet = 0;
+    if (tangage) tournerTete(0, tangage * REGARD_TANGAGE * dt);
+    boucle = requestAnimationFrame(pas);
+    return;
+  }
   if (lacet || tangage) {
     const k = dt * (rapide ? 1.6 : 1);
     if (regardExterne) {
@@ -692,9 +715,11 @@ window.addEventListener("keyup", (e) => {
   rapide = e.shiftKey;
   if (e.code === "KeyW") doubleZ = false;
   enfoncees.delete(e.code);
+  if (!enfoncees.size) commanderDrone("clavier", null);
 });
 window.addEventListener("blur", () => {
   enfoncees.clear();
+  commanderDrone("clavier", null);
   doubleZ = rapide = false;
 });
 

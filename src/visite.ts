@@ -21,14 +21,18 @@ import {
   bloquerUnDoigt,
   choisirAngleVisite,
   definirCourseManette,
+  definirDrone,
   definirOeil,
   definirRegardExterne,
   definirVisite,
   definirVol,
+  modeDrone,
   modeOeil,
+  tournerRegard,
   vitesseVisite,
   volLibre,
 } from "./navigation";
+import { arreterDrone, brancherDrone, commanderDrone } from "./drone";
 import { estAdmin, hauteurTelephone } from "./nuage/projets";
 import { replierCalques } from "./maquettes";
 import { activerAvancement } from "./avancement";
@@ -130,6 +134,7 @@ function placerPanneau() {
   panneau.style.right = ouverte && !enBas ? "360px" : "";
   manette.style.bottom = haut ? `${haut + 12}px` : "";
   btnPhoto.style.bottom = haut ? `${haut + 128}px` : "";
+  placerManetteDroite();
 }
 if (fiche) {
   new MutationObserver(placerPanneau).observe(fiche, { attributes: true, attributeFilter: ["class"] });
@@ -311,7 +316,7 @@ function bouger(e: PointerEvent) {
   const l = Math.hypot(dx, dy);
   // Comme dans les jeux sur téléphone : manette poussée vers l'avant au-delà du bord,
   // on court (la bille devient orange).
-  const course = l > RAYON_MANETTE * 1.5 && dy < -Math.abs(dx);
+  const course = !modeDrone() && l > RAYON_MANETTE * 1.5 && dy < -Math.abs(dx);
   if (course !== poussee.course) {
     poussee.course = course;
     manette.classList.toggle("course", course);
@@ -332,9 +337,73 @@ const lacher = (e: PointerEvent) => {
   bille.style.transform = "";
   manette.classList.remove("course");
   definirCourseManette(false);
+  commanderDrone("gauche", null);
 };
 manette.addEventListener("pointerup", lacher);
 manette.addEventListener("pointercancel", lacher);
+
+// --- Mode drone : seconde manette, à droite ----------------------------------------------
+// Comme une radiocommande de drone (mode 2) : manette gauche = gaz (haut / bas) et rotation
+// sur place (gauche / droite) ; manette droite = avancer, reculer, aller de côté. Poussée
+// au-delà du bord vers l'avant : plus vite.
+const manetteDroite = cree("div", "manette droite");
+const billeDroite = cree("div", "manette-bille");
+manetteDroite.append(billeDroite);
+manetteDroite.hidden = true;
+document.body.append(manetteDroite);
+let pousseeDroite: { id: number; cx: number; cy: number } | null = null;
+manetteDroite.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  const r = manetteDroite.getBoundingClientRect();
+  pousseeDroite = { id: e.pointerId, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  manetteDroite.setPointerCapture(e.pointerId);
+  bougerDroite(e);
+});
+function bougerDroite(e: PointerEvent) {
+  if (!pousseeDroite || e.pointerId !== pousseeDroite.id) return;
+  let dx = e.clientX - pousseeDroite.cx;
+  let dy = e.clientY - pousseeDroite.cy;
+  const l = Math.hypot(dx, dy);
+  const vite = l > RAYON_MANETTE * 1.5 && dy < -Math.abs(dx);
+  manetteDroite.classList.toggle("course", vite);
+  if (l > RAYON_MANETTE) {
+    dx = (dx / l) * RAYON_MANETTE;
+    dy = (dy / l) * RAYON_MANETTE;
+  }
+  billeDroite.style.transform = `translate(${dx}px, ${dy}px)`;
+  if (!modeDrone()) return;
+  commanderDrone("droite", {
+    avance: -dy / RAYON_MANETTE,
+    cote: dx / RAYON_MANETTE,
+    monte: 0,
+    vitesse: vitesseVisite() * (vite ? 2 : 1),
+    aPlat: true,
+  });
+}
+manetteDroite.addEventListener("pointermove", bougerDroite);
+const lacherDroite = (e: PointerEvent) => {
+  if (!pousseeDroite || e.pointerId !== pousseeDroite.id) return;
+  pousseeDroite = null;
+  billeDroite.style.transform = "";
+  manetteDroite.classList.remove("course");
+  commanderDrone("droite", null);
+};
+manetteDroite.addEventListener("pointerup", lacherDroite);
+manetteDroite.addEventListener("pointercancel", lacherDroite);
+/** La manette droite se pose au-dessus du panneau de la visite (replié en vol). */
+function placerManetteDroite() {
+  if (manetteDroite.hidden) return;
+  const r = panneau.getBoundingClientRect();
+  manetteDroite.style.bottom = panneau.hidden || !r.height ? "" : `${Math.round(window.innerHeight - r.top + 10)}px`;
+}
+new ResizeObserver(() => placerManetteDroite()).observe(panneau);
+
+// Le drone déplace l'œil comme la marche (même décalage), et le fait pivoter sur place.
+brancherDrone(
+  (d) => decaler(d.x, d.z, d.y),
+  () => actif && etape === "marche" && modeDrone() && !suspendu,
+  (degres) => tournerRegard(degres),
+);
 
 // Boucle d'animation : manette et suivi GPS.
 let boucle = 0;
@@ -347,7 +416,11 @@ function avancer(t: number) {
   const dt = Math.min(0.1, (t - dernier) / 1000);
   dernier = t;
   let encore = false;
-  if (poussee && (poussee.x || poussee.y)) {
+  if (poussee && modeDrone()) {
+    // Drone : manette gauche = gaz (haut / bas) et rotation sur place (gauche / droite).
+    encore = true;
+    commanderDrone("gauche", { avance: 0, cote: 0, monte: -poussee.y, lacet: poussee.x, vitesse: vitesseVisite(), aPlat: true });
+  } else if (poussee && (poussee.x || poussee.y)) {
     encore = true;
     const position = controles.getPosition(new THREE.Vector3());
     // En anti-gravité, on avance là où l'on regarde (vers le haut ou le bas).
@@ -1134,21 +1207,43 @@ function chuterVers(y: number) {
 /** Anti-gravité : on décolle du niveau, ou on retombe sur le sol en dessous. */
 function basculerVol() {
   if (!actif || etape !== "marche" || arActif()) return;
-  const oui = !volLibre();
+  const oui = !volLibre() || modeDrone();
+  arreterDrone();
   definirVol(oui);
   if (oui) {
     alerte(tactile() ? "Anti-gravité : avancez là où vous regardez." : "Anti-gravité : Z avance là où vous regardez, Espace / C pour monter et descendre.", 3000);
-  } else {
-    // Le sol sous les pieds : le niveau le plus haut sous l'œil.
-    const p = controles.getPosition(new THREE.Vector3());
-    const sol = niveauSous(p.y - yeux());
-    if (sol) {
-      niveau = sol;
-      place = new THREE.Vector3(p.x, sol.y, p.z);
-      tomberVers(sol.y + yeux());
-    }
-  }
+  } else atterrir();
   dessiner();
+}
+
+/** Mode drone : sans gravité, piloté comme un drone (deux manettes, élan et inertie). */
+function basculerDrone() {
+  if (!actif || etape !== "marche" || arActif()) return;
+  const oui = !modeDrone();
+  arreterDrone();
+  definirDrone(oui);
+  if (oui) {
+    // Au téléphone, le panneau se replie : la manette droite prend sa place au-dessus.
+    if (tactile()) replierPanneau(true);
+    alerte(
+      tactile()
+        ? "Drone : manette gauche = gaz et rotation, manette droite = avancer, reculer, côtés."
+        : "Drone : ZQSD pour voler, Espace / C pour les gaz, ← → pour pivoter.",
+      3500,
+    );
+  } else atterrir();
+  dessiner();
+}
+
+/** Retour au sol : le niveau le plus haut sous l'œil. */
+function atterrir() {
+  const p = controles.getPosition(new THREE.Vector3());
+  const sol = niveauSous(p.y - yeux());
+  if (sol) {
+    niveau = sol;
+    place = new THREE.Vector3(p.x, sol.y, p.z);
+    tomberVers(sol.y + yeux());
+  }
 }
 
 /** Retombée comme en vrai (de plus en plus vite), ou petite montée si l'on est sous le sol. */
@@ -1209,6 +1304,7 @@ async function versPlan(e: Etape) {
   etape = e;
   bloquerDecalage(false);
   manette.hidden = true;
+  manetteDroite.hidden = true;
   btnPhoto.hidden = true;
   definirVisite(false);
   await vueEnPlan(niveau);
@@ -1271,7 +1367,7 @@ function dessiner() {
   if (etape !== "marche") replierPanneau(false);
   actions.replaceChildren();
   titre.textContent =
-    etape === "marche" && volLibre() ? "Visite · anti-gravité" : niveau && etape !== "niveau" ? `Visite · ${niveau.nom}` : "Visite";
+    etape === "marche" && modeDrone() ? "Visite · drone" : etape === "marche" && volLibre() ? "Visite · anti-gravité" : niveau && etape !== "niveau" ? `Visite · ${niveau.nom}` : "Visite";
   switch (etape) {
     case "niveau":
       texte.textContent = niveaux.length
@@ -1296,6 +1392,10 @@ function dessiner() {
             : "Le téléphone oriente la vue, la manette fait avancer. Glissez un doigt pour corriger la direction."
           : suiviGps
             ? "La vue suit votre position. Un doigt pour regarder autour de vous."
+            : modeDrone()
+              ? tactile()
+                ? "Drone : manette gauche = gaz (haut / bas) et rotation (gauche / droite) ; manette droite = avancer, reculer, aller de côté. Un doigt pour incliner la vue."
+                : "Drone : ZQSD pour voler, Espace / C pour les gaz, ← → pour pivoter, ↑ ↓ pour incliner la vue."
             : tactile()
               ? volLibre()
                 ? "Anti-gravité : la manette avance là où vous regardez. Poussez au-delà du bord pour aller plus vite."
@@ -1385,7 +1485,8 @@ function dessiner() {
       if (!ar) actions.append(effets);
       if (!ar && !suiviGps) {
         actions.append(
-          puce("Anti-gravité", () => basculerVol(), volLibre() ? "actif" : "", "Ne plus être collé au niveau : aller partout, monter, descendre (touche G)"),
+          puce("Anti-gravité", () => basculerVol(), volLibre() && !modeDrone() ? "actif" : "", "Ne plus être collé au niveau : aller partout, monter, descendre (touche G)"),
+          puce("Drone", () => basculerDrone(), modeDrone() ? "actif" : "", "Voler comme un drone : deux manettes, élan et inertie"),
         );
       }
       const vitesse = puce(`Vitesse : ${allureVisite()}`, () => {
@@ -1394,6 +1495,8 @@ function dessiner() {
       if (!ar && !suiviGps) actions.append(vitesse);
       actions.append(niveauBtn, puce("Plan", () => void versPlan("place"), "", "Revenir au plan pour vous replacer"));
       manette.hidden = suiviGps || ar || !tactile();
+      manetteDroite.hidden = manette.hidden || !modeDrone();
+      placerManetteDroite();
       void garderEcran(suiviGps || ar || gyro);
       break;
     }
@@ -1509,6 +1612,8 @@ async function quitter() {
   point1 = null;
   poussee = null;
   manette.hidden = true;
+  manetteDroite.hidden = true;
+  pousseeDroite = null;
   panneau.hidden = true;
   btnPhoto.hidden = true;
   marqueur.visible = false;
@@ -1519,6 +1624,8 @@ async function quitter() {
   controles.enabled = true;
   fermerPlan();
   definirVol(false);
+  definirDrone(false);
+  arreterDrone();
   definirCourseManette(false);
   definirVisite(false);
   bloquerDecalage(false);
@@ -1552,6 +1659,7 @@ export function suspendreVisite(oui: boolean) {
   if (!actif || suspendu === oui) return;
   suspendu = oui;
   manette.hidden = oui || suiviGps || arActif() || !tactile() || etape !== "marche";
+  manetteDroite.hidden = manette.hidden || !modeDrone();
   if (oui) return;
   // Les capteurs repartent de la vue actuelle.
   if (arActif() || gyroActif()) ancrer();

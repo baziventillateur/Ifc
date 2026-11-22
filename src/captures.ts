@@ -182,14 +182,57 @@ function notifier(cap: Capture) {
       void annoter(cap);
     }),
   );
-  n.append(img, texte, actions);
+  const croix = bouton("capture-notif-fermer", "✕", () => fermerNotif(true), "Fermer");
+  croix.setAttribute("aria-label", "Fermer la notification");
+  n.append(img, texte, actions, croix);
   document.body.append(n);
   requestAnimationFrame(() => n.classList.add("visible"));
   notif = { el: n, minuterie: window.setTimeout(() => fermerNotif(true), 6000) };
   // Un toucher ailleurs que sur ses boutons la range tout de suite.
+  let glisse = false;
   n.addEventListener("click", (e) => {
+    if (glisse) return;
     if (!(e.target as HTMLElement).closest("button")) fermerNotif(true);
   });
+  // Glisser sur le côté ou vers le haut : elle s'en va (la capture reste rangée).
+  let depart: { id: number; x: number; y: number } | null = null;
+  n.addEventListener("pointerdown", (e) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    depart = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    glisse = false;
+    if (notif?.el === n) window.clearTimeout(notif.minuterie);
+    n.setPointerCapture(e.pointerId);
+    n.style.transition = "none";
+  });
+  n.addEventListener("pointermove", (e) => {
+    if (!depart || e.pointerId !== depart.id) return;
+    const dx = e.clientX - depart.x;
+    const dy = Math.min(0, e.clientY - depart.y);
+    if (Math.hypot(dx, dy) > 6) glisse = true;
+    n.style.transform = `translate(calc(-50% + ${dx}px), ${dy}px)`;
+    n.style.opacity = String(Math.max(0.15, 1 - Math.max(Math.abs(dx) / 220, -dy / 90)));
+  });
+  const lacher = (e: PointerEvent) => {
+    if (!depart || e.pointerId !== depart.id) return;
+    const dx = e.clientX - depart.x;
+    const dy = e.clientY - depart.y;
+    depart = null;
+    n.style.transition = "";
+    if (Math.abs(dx) > 70 || dy < -40) {
+      // Partie dans le sens du geste.
+      n.style.transform = Math.abs(dx) > 70 ? `translate(calc(-50% + ${Math.sign(dx) * 480}px), 0)` : "translate(-50%, -120px)";
+      n.style.opacity = "0";
+      if (notif?.el === n) notif = null;
+      window.setTimeout(() => n.remove(), 220);
+    } else {
+      n.style.transform = "";
+      n.style.opacity = "";
+      if (notif?.el === n) notif.minuterie = window.setTimeout(() => fermerNotif(true), 4000);
+    }
+    window.setTimeout(() => (glisse = false), 0);
+  };
+  n.addEventListener("pointerup", lacher);
+  n.addEventListener("pointercancel", lacher);
 }
 
 /** Ferme la notification ; « ranger » : sa vignette file vers l'onglet Captures. */

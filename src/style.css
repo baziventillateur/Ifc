@@ -219,6 +219,46 @@ body {
   pointer-events: auto;
 }
 
+/* Liste des maquettes ouverte : devant les boutons ronds de la vue. */
+body.calques-ouverts .colonne {
+  z-index: 12;
+}
+
+.calques {
+  position: relative;
+}
+.calques-epingle {
+  appearance: none;
+  position: absolute;
+  top: 4px;
+  right: 30px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--doux);
+  opacity: 0.75;
+  cursor: pointer;
+}
+.calques-epingle:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.06);
+}
+.calques-epingle.actif {
+  color: var(--accent);
+  opacity: 1;
+}
+.calques-epingle.actif svg {
+  fill: currentColor;
+}
+.calques.replie .calques-epingle {
+  display: none;
+}
+
 .calques,
 .outil {
   background: var(--panneau);
@@ -3477,7 +3517,28 @@ a.projet-ligne {
   }
 }
 
+.capture-notif-fermer {
+  appearance: none;
+  flex: none;
+  align-self: flex-start;
+  width: 22px;
+  height: 22px;
+  margin-left: -2px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--doux);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.capture-notif-fermer:hover {
+  color: var(--texte);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .capture-notif {
+  touch-action: none;
   position: fixed;
   z-index: 60;
   left: 50%;

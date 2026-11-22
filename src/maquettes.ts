@@ -207,8 +207,55 @@ export function replierCalques(oui: boolean) {
   const avant = calques.classList.contains("replie");
   calques.classList.toggle("replie", oui);
   calquesEntete.setAttribute("aria-expanded", String(!oui));
+  // Ouverte, la liste passe devant les boutons ronds de la vue.
+  document.body.classList.toggle("calques-ouverts", !oui);
   return avant;
 }
+
+// Épingle : sans elle, la liste se replie dès qu'on touche ailleurs (la vue, un autre
+// bouton) ; épinglée, elle reste ouverte. Réglage gardé sur l'appareil.
+const CLE_EPINGLE = "nexbim-calques-epingle";
+let epingle = false;
+try {
+  epingle = localStorage.getItem(CLE_EPINGLE) === "1";
+} catch {
+  // Non épinglée par défaut.
+}
+const ICONE_EPINGLE =
+  '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>';
+const btnEpingle = cree("button", "calques-epingle");
+btnEpingle.type = "button";
+btnEpingle.innerHTML = ICONE_EPINGLE;
+function majEpingle() {
+  btnEpingle.classList.toggle("actif", epingle);
+  btnEpingle.setAttribute("aria-pressed", String(epingle));
+  btnEpingle.setAttribute("aria-label", epingle ? "Désépingler la liste" : "Épingler la liste ouverte");
+  btnEpingle.title = epingle ? "Épinglée : reste ouverte. Toucher pour qu'elle se replie seule." : "Épingler : garder la liste ouverte";
+}
+majEpingle();
+btnEpingle.addEventListener("click", () => {
+  epingle = !epingle;
+  try {
+    localStorage.setItem(CLE_EPINGLE, epingle ? "1" : "0");
+  } catch {
+    // Gardé pour la session.
+  }
+  majEpingle();
+});
+calquesEntete.after(btnEpingle);
+document.addEventListener(
+  "pointerdown",
+  (e) => {
+    if (epingle || calques.hidden || calques.classList.contains("replie")) return;
+    const cible = e.target as Element | null;
+    if (!cible || calques.contains(cible)) return;
+    // Une fenêtre ou un menu ouvert depuis la liste ne la replie pas.
+    if (cible.closest(".dialogue, [role='dialog'], [role='menu'], .menu, .choix-angle, .porte")) return;
+    replierCalques(true);
+  },
+  true,
+);
+document.body.classList.toggle("calques-ouverts", !calques.classList.contains("replie"));
 
 btnCouleurs.addEventListener("click", () => {
   enregistrer(reglages.couleurs ? "couleurs éteintes" : "couleurs allumées", () => {

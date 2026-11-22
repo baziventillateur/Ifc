@@ -4585,3 +4585,227 @@ body.paysage.menu-visible .poignee-menu {
     max-width: 120px;
   }
 }
+
+/* --- Outil Objets : bibliothèque du projet et objets ajoutés ------------------------- */
+.objets-haut {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.objets-visibles {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--texte);
+  cursor: pointer;
+}
+.objets-visibles input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.objets-mode,
+.objets-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.objets-mode:empty,
+.objets-choisi:empty {
+  display: none;
+}
+.objets-mode {
+  margin-bottom: 8px;
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(255, 138, 31, 0.1);
+}
+.objets-consigne {
+  flex: 1 1 100%;
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--texte);
+}
+.objets-choisi {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 7px;
+  border: 1px solid rgba(255, 138, 31, 0.45);
+  border-radius: 9px;
+}
+.objets-choisi-nom {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--texte);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.objets-cotes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+.objets-cote {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--doux);
+}
+.objets-cote input {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--bord);
+  border-radius: 6px;
+  background: #11161c;
+  color: var(--texte);
+  font: inherit;
+  font-size: 12px;
+}
+.objets-garder {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--doux);
+}
+.objets-garder input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.visite-puce.danger {
+  border-color: rgba(229, 83, 75, 0.6);
+  color: #ff8f88;
+}
+.objets-recherche {
+  width: 100%;
+  height: 30px;
+  margin: 2px 0 6px;
+  padding: 0 9px;
+  border: 1px solid var(--bord);
+  border-radius: 8px;
+  background: #11161c;
+  color: var(--texte);
+  font: inherit;
+  font-size: 12.5px;
+  box-sizing: border-box;
+}
+.objets-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.objets-note {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--doux);
+}
+.objets-groupe {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.objets-cat {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--doux);
+  margin-bottom: 1px;
+}
+.objets-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--texte);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.objets-item:hover {
+  background: rgba(255, 138, 31, 0.14);
+}
+.objets-item-nom {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.objets-item-nb {
+  flex: none;
+  color: var(--doux);
+  font-size: 11px;
+}
+.objets-tout {
+  align-self: flex-start;
+  font-size: 11.5px;
+}
+.fiche-copier {
+  appearance: none;
+  flex: none;
+  align-self: center;
+  height: 24px;
+  margin-right: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--bord);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--doux);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.fiche-copier:hover {
+  color: var(--texte);
+  border-color: var(--accent);
+}
+.fiche-copier[hidden] {
+  display: none;
+}
+
+/* Panneau admin : réglages communs (son des pas). */
+.admin-reglage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 12px;
+}
+.admin-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--doux);
+}
+.admin-volume input {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.admin-reglage-pied {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.admin-reglage-etat {
+  font-size: 11.5px;
+  color: var(--doux);
+}

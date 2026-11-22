@@ -22,6 +22,8 @@ import "./outils/recherche";
 import "./outils/quantites";
 import "./outils/clashs";
 import "./outils/modifier";
+import "./ajouts";
+import "./reglages-app";
 import "./outils/remarques";
 import "./outils/assistant";
 import "./outils/styles";

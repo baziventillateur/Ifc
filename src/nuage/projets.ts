@@ -1,5 +1,6 @@
 // Projet dans le cloud : maquettes déposées, personnes invitées, compte, panneau admin.
 import {
+import { blocReglagesPas } from "../reglages-app";
   deplacementsModifies,
   exporter as exporterDeplacements,
   importer as importerDeplacements,
@@ -1113,5 +1114,5 @@ async function ouvrirAdmin() {
   }
   const defile = cree("div", "admin-defile");
   defile.append(table);
-  corps.replaceChildren(chiffres, defile, bouton("btn", "Retour", () => ouvrirPanneau()));
+  corps.replaceChildren(chiffres, blocReglagesPas(), defile, bouton("btn", "Retour", () => ouvrirPanneau()));
 }

@@ -171,23 +171,16 @@ export const STYLES_PAS: { cle: StylePas; nom: string }[] = [
 ];
 /** Début et durée (s) de chaque enregistrement dans pas.mp3. */
 const SONS_PAS: Record<"beton" | "bottes" | "gravats" | "equipement", [number, number][]> = {"beton": [[0.0, 0.103], [0.253, 0.1047], [0.5078, 0.1099], [0.7676, 0.1076], [1.0252, 0.1115]], "bottes": [[1.2867, 0.2489], [1.6856, 0.2825], [2.118, 0.2422], [2.5102, 0.269], [2.9292, 0.3228], [3.4021, 0.2758], [3.8278, 0.2421], [4.22, 0.2556], [4.6256, 0.2556], [5.0312, 0.2152]], "gravats": [[5.3964, 0.3713], [5.9177, 0.3713], [6.439, 0.3713], [6.9603, 0.3713], [7.4817, 0.3713]], "equipement": [[8.003, 0.661], [8.814, 0.4151], [9.3791, 0.4766], [10.0057, 0.3844], [10.54, 0.2767], [10.9667, 0.4766], [11.5933, 0.3382], [12.0815, 0.3075]]};
-const VOLUME_PAS = 0.11;
-const CLE_STYLE = "nexbim-pas-son";
-let stylePas: StylePas = "tactique";
-try {
-  const lu = localStorage.getItem(CLE_STYLE) as StylePas | null;
-  if (lu && STYLES_PAS.some((x) => x.cle === lu)) stylePas = lu;
-} catch {
-  // Tactique par défaut.
-}
+// Son et volume communs à tous, choisis par l'administrateur (reglages-app.ts) ; Béton par défaut.
+let volumePas = 0.11;
+let stylePas: StylePas = "beton";
 export const styleDesPas = () => stylePas;
+export const volumeDesPas = () => volumePas;
 export function choisirStylePas(s: StylePas) {
-  stylePas = s;
-  try {
-    localStorage.setItem(CLE_STYLE, s);
-  } catch {
-    // Gardé pour la session.
-  }
+  if (STYLES_PAS.some((x) => x.cle === s)) stylePas = s;
+}
+export function definirVolumePas(v: number) {
+  volumePas = Math.min(0.3, Math.max(0, v));
 }
 
 let son: AudioContext | null = null;
@@ -250,7 +243,7 @@ function jouerPas(fort: number, aGauche: boolean, retard = 0) {
   if (!a || a.state !== "running" || !tampon) return;
   const t = a.currentTime + 0.005 + retard;
   const sortie = a.createGain();
-  sortie.gain.value = VOLUME_PAS * fort * (0.85 + Math.random() * 0.3);
+  sortie.gain.value = volumePas * fort * (0.85 + Math.random() * 0.3);
   const cote = a.createStereoPanner();
   cote.pan.value = aGauche ? -0.16 : 0.16;
   sortie.connect(cote).connect(a.destination);
@@ -279,6 +272,9 @@ function jouerPas(fort: number, aGauche: boolean, retard = 0) {
 }
 
 /** Fait entendre trois pas du son choisi (au choix dans le panneau Mode jeu). */
+/** Prépare le son à l'avance (ouverture du panneau admin) pour que l'écoute soit immédiate. */
+export const prechargerSonPas = () => preparerSon();
+
 export function ecouterPas() {
   preparerSon();
   const essai = () => {
@@ -286,7 +282,8 @@ export function ecouterPas() {
     for (let k = 0; k < 3; k++) jouerPas(1, k % 2 === 0, k * 0.42);
   };
   if (tampon && son?.state === "running") essai();
-  else void chargement?.then(() => window.setTimeout(essai, 60));
+  // Le son démarre et le fichier se charge : on attend les deux.
+  else void Promise.all([chargement, son?.resume()]).then(() => window.setTimeout(essai, 40));
 }
 
 // --- Flou des bords ---------------------------------------------------------------------

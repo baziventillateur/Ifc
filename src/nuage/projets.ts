@@ -7,9 +7,10 @@ import {
 } from "../deplacements";
 import type { User } from "@supabase/supabase-js";
 import { blocReglagesPas } from "../reglages-app";
-import { alerte, attente, bouton, cree, el, Signal } from "../noyau";
-import { maquettes as affichees } from "../registre";
+import { alerte, attente, bouton, cree, el, icone, Signal } from "../noyau";
+import { detecterLot, maquettes as affichees } from "../registre";
 import {
+  afficherMaquettes,
   ajouterIfc,
   bufferDe,
   chargementOccupe,
@@ -92,7 +93,7 @@ function fermer() {
 }
 
 function ouvrirFenetre(titre: string, large = false) {
-  modale.classList.toggle("large", large);
+  modale.className = large ? "modale large" : "modale";
   const entete = cree("div", "modale-entete");
   const x = bouton("fermer", "✕", fermer, "Fermer");
   entete.append(cree("span", "", titre), x);
@@ -101,8 +102,6 @@ function ouvrirFenetre(titre: string, large = false) {
   fond.hidden = false;
   return corps;
 }
-
-const section = (titre: string) => cree("div", "modale-titre", titre);
 
 /** Fenêtre de confirmation : le bouton d'action est explicite, Annuler revient au panneau. */
 function confirmer(titre: string, texte: string, action: string, danger = false): Promise<boolean> {
@@ -514,16 +513,6 @@ export async function deposer(fichiers: File[]) {
 
 // --- Panneau « Projet » -----------------------------------------------------------
 
-function ligne(texte: string, detail: string, action?: HTMLElement) {
-  const l = cree("div", "modale-ligne");
-  const t = cree("div", "modale-ligne-texte");
-  t.append(cree("span", "", texte));
-  if (detail) t.append(cree("small", "", detail));
-  l.append(t);
-  if (action) l.append(action);
-  return l;
-}
-
 function formulaire(indication: string, libelle: string, type: string, envoyer: (v: string) => Promise<string | void>) {
   const f = cree("form", "modale-form");
   const saisie = cree("input");
@@ -579,280 +568,688 @@ async function inviter(email: string) {
   ouvrirPanneau(messages[data?.etat ?? ""] ?? "Invitation enregistrée.");
 }
 
-function ouvrirPanneau(info = "") {
+// Panneau en onglets, façon page de dépôt GitHub : en-tête du projet (sélecteur),
+// onglets Maquettes / Personnes / Corbeille / Réglages, listes repliables.
+type Onglet = "maquettes" | "personnes" | "corbeille" | "reglages";
+const vuePanneau = {
+  onglet: "maquettes" as Onglet,
+  /** Menu de choix du projet déplié. */
+  projetsOuverts: false,
+  /** Liste des maquettes repliée (en-tête seul). */
+  repliee: false,
+  /** Listes affichées en entier au lieu des premières lignes. */
+  toutesMaquettes: false,
+  toutesPersonnes: false,
+  filtre: "",
+  /** Maquettes dont le détail est déplié. */
+  details: new Set<string>(),
+};
+const PREMIERES_LIGNES = 5;
+
+function ico(d: string, taille = 14) {
+  return `<svg viewBox="0 0 24 24" width="${taille}" height="${taille}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+}
+const ICO = {
+  dossier: ico('<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2.2h8.8A1.5 1.5 0 0 1 21 9.7v8.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5Z"/>', 16),
+  maquettes: ico('<path d="M12 3 3.5 7.5 12 12l8.5-4.5L12 3Z"/><path d="m3.5 12 8.5 4.5 8.5-4.5"/><path d="m3.5 16.5 8.5 4.5 8.5-4.5"/>'),
+  personnes: ico('<circle cx="9" cy="8" r="3.2"/><path d="M3 19.5c.6-3.2 3-5 6-5s5.4 1.8 6 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.8 14.6c2.4.2 4.3 1.8 4.9 4.4"/>'),
+  corbeille: ico('<path d="M4 7h16"/><path d="M9.5 7V4.5h5V7"/><path d="m6.5 7 .9 12.2a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4L17.5 7"/>'),
+  reglages: ico('<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M4.2 7.5l2.2 1.2M17.6 15.3l2.2 1.2M4.2 16.5l2.2-1.2M17.6 8.7l2.2-1.2"/>'),
+  chevron: ico('<path d="m9 6 6 6-6 6"/>', 12),
+  bas: ico('<path d="m6 9 6 6 6-6"/>', 12),
+  plus: ico('<path d="M12 5v14M5 12h14"/>', 13),
+  coche: ico('<path d="m5 12.5 4.5 4.5L19 7.5"/>', 13),
+  loupe: ico('<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/>', 13),
+  telecharger: ico('<path d="M12 4v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M5 19.5h14"/>', 13),
+};
+const avecIcone = (classe: string, svg: string, texte?: string) => {
+  const s = cree("span", classe);
+  s.innerHTML = svg;
+  if (texte !== undefined) s.append(cree("span", "", texte));
+  return s;
+};
+const pluriel = (n: number, mot: string) => `${n} ${mot}${n > 1 ? "s" : ""}`;
+const sansAccents = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const dateCourte = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+
+/** Réaffiche le panneau à la même hauteur de défilement (dépliage, œil, etc.). */
+function redessiner(info = "") {
+  const avant = modale.querySelector<HTMLElement>(".modale-corps")?.scrollTop ?? 0;
+  ouvrirPanneau(info);
+  const corps = modale.querySelector<HTMLElement>(".modale-corps");
+  if (corps) corps.scrollTop = avant;
+}
+
+/** Ouvre le panneau avec le choix des projets déplié (menu du compte). */
+function ouvrirMesProjets() {
+  vuePanneau.projetsOuverts = true;
+  ouvrirPanneau();
+}
+
+function changerDeProjet(p: Projet, message?: string) {
+  vuePanneau.projetsOuverts = false;
+  vuePanneau.filtre = "";
+  vuePanneau.toutesMaquettes = false;
+  vuePanneau.toutesPersonnes = false;
+  vuePanneau.details.clear();
+  vuePanneau.onglet = "maquettes";
+  fermer();
+  void ouvrirProjet(p).then(() => message && alerte(message, 4500));
+}
+
+function ouvrirPanneau(info = "", onglet?: Onglet) {
+  if (onglet) vuePanneau.onglet = onglet;
   const corps = ouvrirFenetre("Projet");
+  modale.classList.add("projet");
   if (info) corps.append(cree("p", "modale-info", info));
-
-  // --- Mes projets : passer de l'un à l'autre, en créer un
-  const miens = etat.projets.filter((p) => p.proprietaire === etat.moi.id).length;
-  const peutCreer = etat.admin || miens < PROJETS_MAX;
-  const titreProjets = cree("div", "modale-titre avec-action");
-  titreProjets.append(cree("span", "", etat.admin ? "Mes projets" : `Mes projets · ${miens}/${PROJETS_MAX}`));
-  if (etat.admin) {
-    titreProjets.append(
-      bouton(
-        "btn-tous-projets",
-        etat.autres ? "−" : "+",
-        () => void basculerTousProjets(),
-        etat.autres ? "Masquer les projets des autres comptes" : "Voir les projets de tous les comptes (administrateur)",
-      ),
-    );
-  }
-  corps.append(titreProjets);
-  if (etat.projets.length === 0) {
-    corps.append(cree("p", "modale-aide", `Un projet regroupe jusqu'à ${MAQUETTES_MAX} maquettes IFC et les personnes que vous invitez.`));
-  }
-  const listeProjets = cree("div", "projets-liste");
-  for (const p of etat.projets) {
-    const actif = p.id === etat.courant?.id;
-    const ligne = bouton("projet-ligne" + (actif ? " actif" : ""), "", () => {
-      if (actif) return;
-      fermer();
-      void ouvrirProjet(p);
-    }, actif ? "Projet affiché" : "Ouvrir ce projet");
-    ligne.append(
-      cree("span", "projet-nom", p.nom),
-      cree("span", "projet-role", p.proprietaire === etat.moi.id ? (actif ? "affiché" : "") : actif ? "invité · affiché" : "invité"),
-    );
-    listeProjets.append(ligne);
-  }
-  // Administrateur : projet d'un autre compte en cours de consultation.
-  const courant = etat.courant;
-  if (courant && !etat.projets.some((p) => p.id === courant.id)) {
-    const l = bouton("projet-ligne actif autre", "", () => {}, "Projet affiché (accès administrateur)");
-    l.append(cree("span", "projet-nom", courant.nom), cree("span", "projet-role", "admin · affiché"));
-    listeProjets.prepend(l);
-  }
-  if (listeProjets.childElementCount) corps.append(listeProjets);
-  if (etat.admin && etat.autres) {
-    corps.append(section(`Tous les projets · ${etat.autres.length}`));
-    const listeAutres = cree("div", "projets-liste");
-    for (const p of etat.autres) {
-      const actif = p.id === etat.courant?.id;
-      const l = bouton("projet-ligne autre" + (actif ? " actif" : ""), "", () => {
-        if (actif) return;
-        fermer();
-        void ouvrirProjet(p).then(() =>
-          alerte(`Projet de ${p.titulaire} ouvert en lecture seule (accès administrateur).`, 4500),
-        );
-      }, `Ouvrir le projet de ${p.titulaire}`);
-      l.append(
-        cree("span", "projet-nom", p.nom),
-        cree("span", "projet-role", `${p.titulaire} · ${p.maquettes} maq.`),
-      );
-      listeAutres.append(l);
-    }
-    if (!etat.autres.length) listeAutres.append(cree("p", "modale-aide", "Aucun autre projet pour l'instant."));
-    corps.append(listeAutres);
-  }
-  if (peutCreer) {
-    corps.append(
-      formulaire("Nom du nouveau projet", "Créer", "text", async (nom) => {
-        const { data, error } = await nuage.from("projets").insert({ nom }).select("id, nom, proprietaire").single();
-        if (error || !data) return messageErreur(error);
-        etat.projets.push(data as Projet);
-        fermer();
-        await ouvrirProjet(data as Projet);
-        ouvrirPanneau("Projet créé. Déposez votre première maquette.");
-      }),
-    );
-  } else {
-    corps.append(cree("p", "modale-aide", `${PROJETS_MAX} projets au maximum par compte. Supprimez-en un pour en créer un autre.`));
-  }
-
   const projet = etat.courant;
+  corps.append(enteteProjet(projet));
+  if (!projet || vuePanneau.projetsOuverts) corps.append(menuProjets());
   if (projet) {
-    corps.append(section(`${projet.nom} · maquettes ${etat.fichiers.length}/${MAQUETTES_MAX}`));
-    if (etat.fichiers.length === 0) corps.append(cree("p", "modale-aide", "Aucune maquette déposée."));
-    for (const f of etat.fichiers) {
-      const suppr = createur()
-        ? bouton("lien danger", "Supprimer", async () => {
-            const oui = await confirmer(
-              "Supprimer la maquette ?",
-              `« ${f.nom} » quittera le projet, pour vous et pour les personnes invitées. ` +
-                `Elle reste dans la corbeille pendant ${CORBEILLE_JOURS} jours : vous pourrez la restaurer d'ici là. ` +
-                `Ensuite, elle sera effacée définitivement.`,
-              "Mettre à la corbeille",
-              true,
-            );
-            if (!oui) return ouvrirPanneau();
-            const { error } = await nuage
-              .from("maquettes")
-              .update({ supprime_le: new Date().toISOString() })
-              .eq("id", f.id);
-            if (error) {
-              alerte(messageErreur(error));
-              return ouvrirPanneau();
-            }
-            if (affichees.has(nomLocal(f.nom))) await retirer(nomLocal(f.nom));
-            await chargerDetails();
-            if (affichees.size === 0) await chargerExemple();
-            majBandeau();
-            ouvrirPanneau(`« ${f.nom} » est dans la corbeille (${CORBEILLE_JOURS} jours).`);
-          })
-        : undefined;
-      corps.append(ligne(f.nom, taille(f.taille), suppr));
-    }
-    if (createur() && etat.fichiers.length < MAQUETTES_MAX) {
-      corps.append(
-        bouton("btn principal", "Déposer une maquette", () => {
-          fermer();
-          btnAjouter.click();
-        }),
-      );
-    }
-
-    if (createur() && etat.corbeille.length) {
-      corps.append(section(`Corbeille · ${etat.corbeille.length}`));
-      for (const f of etat.corbeille) {
-        const reste = jours(f.supprime_le!);
-        const actions = cree("div", "modale-actions");
-        actions.append(
-          bouton("lien", "Restaurer", async () => {
-            const { error } = await nuage.from("maquettes").update({ supprime_le: null }).eq("id", f.id);
-            if (error) {
-              alerte(
-                error.code === "23505"
-                  ? "Une maquette du projet porte déjà ce nom : supprimez-la d'abord."
-                  : messageErreur(error),
-              );
-              return;
-            }
-            await chargerDetails();
-            majBandeau();
-            await ouvrirProjet(projet);
-            ouvrirPanneau(`« ${f.nom} » est de retour dans le projet.`);
-          }),
-          bouton("lien danger", "Effacer", async () => {
-            const oui = await confirmer(
-              "Effacer définitivement ?",
-              `« ${f.nom} » sera effacée tout de suite, sans retour possible.`,
-              "Effacer définitivement",
-              true,
-            );
-            if (oui) {
-              await nuage.storage.from("maquettes").remove(cheminsDe(f));
-              const { error } = await nuage.from("maquettes").delete().eq("id", f.id);
-              if (error) alerte(messageErreur(error));
-              await chargerDetails();
-            }
-            ouvrirPanneau();
-          }),
-        );
-        corps.append(
-          ligne(f.nom, `${taille(f.taille)} · effacée dans ${reste} jour${reste > 1 ? "s" : ""}`, actions),
-        );
-      }
-    }
-
-    corps.append(section(`Personnes · ${etat.personnes.length}`));
-    for (const p of etat.personnes) {
-      const role =
-        p.role === "createur" ? "Créateur" : p.role === "invite" ? "Invité · lecture seule" : "Invitation envoyée · en attente";
-      let actions: HTMLElement | undefined;
-      if (createur() && p.role !== "createur") {
-        actions = cree("div", "modale-actions");
-        if (p.role !== "invite") {
-          actions.append(
-            bouton("lien", "Renvoyer", async () => {
-              const erreur = await inviter(p.email);
-              if (erreur) alerte(erreur);
-            }, "Renvoyer l'e-mail d'invitation"),
-          );
-        }
-        actions.append(
-          bouton("lien danger", "Retirer", async () => {
-            const qui = p.prenom || p.email;
-            const oui = await confirmer(
-              p.role === "invite" ? "Retirer cette personne ?" : "Annuler l'invitation ?",
-              p.role === "invite"
-                ? `${qui} n'aura plus accès au projet « ${projet.nom} ». Vous pourrez l'inviter à nouveau.`
-                : `Le lien envoyé à ${p.email} ne fonctionnera plus.`,
-              p.role === "invite" ? "Retirer" : "Annuler l'invitation",
-              true,
-            );
-            if (!oui) return ouvrirPanneau();
-            const requete =
-              p.role === "invite"
-                ? nuage.from("membres").delete().eq("projet_id", projet.id).eq("utilisateur_id", p.utilisateur_id)
-                : nuage.from("invitations").delete().eq("projet_id", projet.id).eq("email", p.email);
-            const { error } = await requete;
-            if (error) return alerte(messageErreur(error));
-            await chargerDetails();
-            ouvrirPanneau(p.role === "invite" ? `${qui} n'a plus accès au projet.` : `Invitation de ${p.email} annulée.`);
-          }, p.role === "invite" ? "Retirer l'accès" : "Annuler l'invitation"),
-        );
-      }
-      corps.append(ligne(p.prenom || p.email, p.prenom ? `${p.email} · ${role}` : role, actions));
-    }
-    if (createur()) {
-      corps.append(formulaire("E-mail de la personne à inviter", "Inviter", "email", inviter));
-      corps.append(
-        cree(
-          "p",
-          "modale-aide",
-          "La personne reçoit un e-mail. Si elle n'a pas encore de compte, elle le crée depuis ce lien et entre directement dans le projet, en lecture seule.",
-        ),
-      );
-    }
-
-    corps.append(
-      createur()
-        ? bouton("lien danger", "Supprimer le projet", async () => {
-            const oui = await confirmer(
-              "Supprimer le projet ?",
-              `Le projet « ${projet.nom} », ses ${etat.fichiers.length + etat.corbeille.length} maquette(s), corbeille comprise, ` +
-                `et les accès des personnes invitées seront effacés tout de suite, sans corbeille ni retour possible.`,
-              "Supprimer le projet",
-              true,
-            );
-            if (!oui) return ouvrirPanneau();
-            const chemins = [...etat.fichiers, ...etat.corbeille].flatMap(cheminsDe);
-            if (chemins.length) await nuage.storage.from("maquettes").remove(chemins);
-            const { error } = await nuage.from("projets").delete().eq("id", projet.id);
-            if (error) return alerte(messageErreur(error));
-            fermer();
-            await chargerProjets();
-            await ouvrirProjet(etat.projets[0] ?? null);
-          })
-        : !etat.projets.some((p) => p.id === projet.id)
-          ? cree("span", "modale-aide", "Accès administrateur : lecture seule.")
-          : bouton("lien danger", "Quitter ce projet", async () => {
-            const oui = await confirmer(
-              "Quitter le projet ?",
-              `Vous ne verrez plus les maquettes de « ${projet.nom} ». Le créateur pourra vous inviter à nouveau.`,
-              "Quitter",
-            );
-            if (!oui) return ouvrirPanneau();
-            await nuage.from("membres").delete().eq("projet_id", projet.id).eq("utilisateur_id", etat.moi.id);
-            fermer();
-            await chargerProjets();
-            await ouvrirProjet(etat.projets[0] ?? null);
-          }),
-    );
-  }
-
-  const pied = cree("div", "modale-pied");
-  if (!exempleAffiche()) {
-    pied.append(
-      bouton("btn", "Voir la maquette d'essai", () => {
-        fermer();
-        void chargerExemple();
-      }),
-    );
-  } else if (etat.fichiers.length > 0 && projet) {
-    pied.append(
-      bouton("btn", "Revenir à mes maquettes", () => {
-        fermer();
-        void ouvrirProjet(projet);
-      }),
-    );
+    const avecCorbeille = createur() && etat.corbeille.length > 0;
+    if (vuePanneau.onglet === "corbeille" && !avecCorbeille) vuePanneau.onglet = "maquettes";
+    corps.append(barreOnglets(avecCorbeille));
+    const zone = cree("div", "pj-zone");
+    zone.setAttribute("role", "tabpanel");
+    if (vuePanneau.onglet === "maquettes") ongletMaquettes(zone, projet);
+    else if (vuePanneau.onglet === "personnes") ongletPersonnes(zone, projet);
+    else if (vuePanneau.onglet === "corbeille") ongletCorbeille(zone, projet);
+    else ongletReglages(zone, projet);
+    corps.append(zone);
+  } else if (!exempleAffiche()) {
+    corps.append(bouton("lien pj-essai", "Voir la maquette d'essai", () => (fermer(), void chargerExemple())));
   }
   const signature = cree("a", "signature", "NexBim · une application PaceApp");
   signature.href = "https://paceapp.fr";
   signature.target = "_blank";
   signature.rel = "noopener";
-  corps.append(pied, signature);
+  corps.append(signature);
+}
+
+// --- En-tête : nom du projet, rôle, chiffres ; un clic déplie le choix des projets ---
+
+function roleDansProjet(p: Projet) {
+  if (p.proprietaire === etat.moi.id) return { texte: "Créateur", classe: "createur" };
+  if (etat.projets.some((x) => x.id === p.id)) return { texte: "Lecture seule", classe: "invite" };
+  return { texte: "Admin · lecture", classe: "admin" };
+}
+
+function enteteProjet(projet: Projet | null) {
+  const tete = cree("div", "pj-tete");
+  const ouvert = !projet || vuePanneau.projetsOuverts;
+  const sel = bouton(
+    "pj-selecteur" + (ouvert ? " ouvert" : ""),
+    "",
+    () => {
+      if (!projet) return;
+      vuePanneau.projetsOuverts = !vuePanneau.projetsOuverts;
+      redessiner();
+    },
+    projet ? "Changer de projet" : undefined,
+  );
+  sel.setAttribute("aria-expanded", String(ouvert));
+  sel.append(avecIcone("pj-icone", ICO.dossier), cree("span", "pj-nom", projet ? projet.nom : "Choisir un projet"));
+  if (projet) {
+    const r = roleDansProjet(projet);
+    sel.append(cree("span", `pj-badge ${r.classe}`, r.texte));
+  }
+  sel.append(avecIcone("pj-fleche", ICO.bas));
+  tete.append(sel);
+  if (projet) {
+    const volume = etat.fichiers.reduce((s, f) => s + f.taille, 0);
+    tete.append(
+      cree(
+        "div",
+        "pj-stats",
+        `${pluriel(etat.fichiers.length, "maquette")} · ${taille(volume)} · ${pluriel(etat.personnes.length, "personne")}`,
+      ),
+    );
+  }
+  return tete;
+}
+
+function menuProjets() {
+  const menu = cree("div", "pj-menu");
+  const miens = etat.projets.filter((p) => p.proprietaire === etat.moi.id);
+  const partages = etat.projets.filter((p) => p.proprietaire !== etat.moi.id);
+  const ligneProjet = (p: Projet, detail = "", autre = false, message?: string) => {
+    const actif = p.id === etat.courant?.id;
+    const l = bouton(
+      "pj-projet" + (actif ? " actif" : "") + (autre ? " autre" : ""),
+      "",
+      () => (actif ? ((vuePanneau.projetsOuverts = false), redessiner()) : changerDeProjet(p, message)),
+      actif ? "Projet affiché" : "Ouvrir ce projet",
+    );
+    l.append(avecIcone("pj-coche", actif ? ICO.coche : ""), cree("span", "pj-projet-nom", p.nom));
+    if (detail) l.append(cree("span", "pj-projet-detail", detail));
+    return l;
+  };
+  const titre = cree("div", "pj-menu-titre");
+  titre.append(cree("span", "", etat.admin ? `Mes projets · ${miens.length}` : `Mes projets · ${miens.length}/${PROJETS_MAX}`));
+  if (etat.admin) {
+    titre.append(
+      bouton(
+        "lien pj-admin-tous",
+        etat.autres ? "Masquer les autres comptes" : "Tous les comptes",
+        () => void basculerTousProjets(),
+        "Projets de tous les comptes (administrateur)",
+      ),
+    );
+  }
+  menu.append(titre);
+  if (!etat.projets.length) {
+    menu.append(cree("p", "modale-aide", `Un projet regroupe jusqu'à ${MAQUETTES_MAX} maquettes IFC et les personnes que vous invitez.`));
+  }
+  for (const p of miens) menu.append(ligneProjet(p));
+  // Administrateur : projet d'un autre compte en cours de consultation.
+  const courant = etat.courant;
+  if (courant && !etat.projets.some((p) => p.id === courant.id) && !etat.autres?.some((p) => p.id === courant.id)) {
+    menu.append(ligneProjet(courant, "admin", true));
+  }
+  if (partages.length) {
+    menu.append(cree("div", "pj-menu-titre", `Partagés avec moi · ${partages.length}`));
+    for (const p of partages) menu.append(ligneProjet(p, "lecture"));
+  }
+  if (etat.admin && etat.autres) {
+    menu.append(cree("div", "pj-menu-titre", `Autres comptes · ${etat.autres.length}`));
+    if (!etat.autres.length) menu.append(cree("p", "modale-aide", "Aucun autre projet pour l'instant."));
+    for (const p of etat.autres) {
+      menu.append(
+        ligneProjet(p, `${p.titulaire} · ${p.maquettes} maq.`, true, `Projet de ${p.titulaire} ouvert en lecture seule (accès administrateur).`),
+      );
+    }
+  }
+  if (etat.admin || miens.length < PROJETS_MAX) {
+    const f = formulaire("Nom du nouveau projet", "Créer", "text", async (nom) => {
+      const { data, error } = await nuage.from("projets").insert({ nom }).select("id, nom, proprietaire").single();
+      if (error || !data) return messageErreur(error);
+      etat.projets.push(data as Projet);
+      vuePanneau.projetsOuverts = false;
+      vuePanneau.onglet = "maquettes";
+      fermer();
+      await ouvrirProjet(data as Projet);
+      ouvrirPanneau("Projet créé. Déposez votre première maquette.");
+    });
+    f.classList.add("pj-creer");
+    menu.append(f);
+  } else {
+    menu.append(cree("p", "modale-aide", `${PROJETS_MAX} projets au maximum par compte. Supprimez-en un pour en créer un autre.`));
+  }
+  return menu;
+}
+
+// --- Onglets ------------------------------------------------------------------------
+
+function barreOnglets(avecCorbeille: boolean) {
+  const nav = cree("div", "pj-onglets");
+  nav.setAttribute("role", "tablist");
+  const liste: [Onglet, string, string, number | null][] = [
+    ["maquettes", "Maquettes", ICO.maquettes, etat.fichiers.length],
+    ["personnes", "Personnes", ICO.personnes, etat.personnes.length],
+  ];
+  if (avecCorbeille) liste.push(["corbeille", "Corbeille", ICO.corbeille, etat.corbeille.length]);
+  liste.push(["reglages", "Réglages", ICO.reglages, null]);
+  for (const [id, texte, svg, n] of liste) {
+    const actif = vuePanneau.onglet === id;
+    const b = bouton("pj-onglet" + (actif ? " actif" : ""), "", () => {
+      if (actif) return;
+      vuePanneau.onglet = id;
+      ouvrirPanneau();
+    });
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(actif));
+    b.innerHTML = svg;
+    b.append(cree("span", "", texte));
+    if (n !== null) b.append(cree("span", "pj-compte", String(n)));
+    nav.append(b);
+  }
+  return nav;
+}
+
+/** Boîte bordée avec en-tête (titre à gauche, actions à droite) et liste. */
+function boite(titre: HTMLElement, actions: HTMLElement[] = []) {
+  const b = cree("div", "pj-boite");
+  const tete = cree("div", "pj-boite-tete");
+  const a = cree("div", "pj-boite-actions");
+  a.append(...actions);
+  tete.append(titre, a);
+  const liste = cree("div", "pj-liste");
+  b.append(tete, liste);
+  return { b, tete, liste };
+}
+
+function boutonToutVoir(total: number, tout: boolean, basculer: () => void) {
+  return bouton("pj-tout-voir", tout ? "Réduire" : `Tout voir (${total})`, basculer);
+}
+
+// --- Onglet Maquettes ----------------------------------------------------------------
+
+async function telechargerIfc(f: Fichier) {
+  attente(`Préparation de « ${f.nom} »…`);
+  try {
+    const brut = await telechargerFichier(f.chemin);
+    const ifc = f.chemin.endsWith(".gz") ? await decompresser(brut) : brut;
+    const a = cree("a");
+    a.href = URL.createObjectURL(new Blob([ifc], { type: "application/x-step" }));
+    a.download = /\.ifc$/i.test(f.nom) ? f.nom : `${f.nom}.ifc`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+  } catch (e) {
+    console.error(e);
+    alerte("Téléchargement impossible. Réessayez.");
+  } finally {
+    attente(null);
+  }
+}
+
+async function mettreALaCorbeille(f: Fichier) {
+  const oui = await confirmer(
+    "Supprimer la maquette ?",
+    `« ${f.nom} » quittera le projet, pour vous et pour les personnes invitées. ` +
+      `Elle reste dans la corbeille pendant ${CORBEILLE_JOURS} jours : vous pourrez la restaurer d'ici là. ` +
+      `Ensuite, elle sera effacée définitivement.`,
+    "Mettre à la corbeille",
+    true,
+  );
+  if (!oui) return redessiner();
+  const { error } = await nuage.from("maquettes").update({ supprime_le: new Date().toISOString() }).eq("id", f.id);
+  if (error) {
+    alerte(messageErreur(error));
+    return redessiner();
+  }
+  if (affichees.has(nomLocal(f.nom))) await retirer(nomLocal(f.nom));
+  vuePanneau.details.delete(f.id);
+  await chargerDetails();
+  if (affichees.size === 0) await chargerExemple();
+  majBandeau();
+  ouvrirPanneau(`« ${f.nom} » est dans la corbeille (${CORBEILLE_JOURS} jours).`);
+}
+
+function ongletMaquettes(zone: HTMLElement, projet: Projet) {
+  const n = etat.fichiers.length;
+  const peutDeposer = createur() && n < MAQUETTES_MAX;
+  const barre = cree("div", "pj-barre");
+  let liste: HTMLElement;
+  if (n > PREMIERES_LIGNES) {
+    const recherche = cree("label", "pj-recherche");
+    recherche.innerHTML = ICO.loupe;
+    const saisie = cree("input");
+    saisie.type = "search";
+    saisie.placeholder = "Filtrer les maquettes…";
+    saisie.value = vuePanneau.filtre;
+    saisie.addEventListener("input", () => {
+      vuePanneau.filtre = saisie.value;
+      remplir();
+    });
+    recherche.append(saisie);
+    barre.append(recherche);
+  } else {
+    barre.append(cree("span", "pj-barre-texte", createur() ? "Maquettes IFC du projet" : "Maquettes partagées avec vous"));
+  }
+  if (peutDeposer) {
+    const dep = bouton("btn principal pj-deposer", "", () => (fermer(), btnAjouter.click()), "Déposer une maquette IFC");
+    dep.innerHTML = ICO.plus;
+    dep.append(cree("span", "", "Déposer"));
+    barre.append(dep);
+  }
+  zone.append(barre);
+
+  if (n === 0) {
+    const vide = cree("div", "pj-vide");
+    vide.innerHTML = ico('<path d="M12 3 3.5 7.5 12 12l8.5-4.5L12 3Z"/><path d="m3.5 12 8.5 4.5 8.5-4.5"/><path d="m3.5 16.5 8.5 4.5 8.5-4.5"/>', 26);
+    vide.append(
+      cree("strong", "", "Aucune maquette"),
+      cree("span", "", createur() ? `Déposez jusqu'à ${MAQUETTES_MAX} fichiers IFC.` : "Le créateur n'a encore rien déposé."),
+    );
+    zone.append(vide);
+  } else {
+    const chargees = etat.fichiers.map((f) => affichees.get(nomLocal(f.nom))).filter((m) => !!m);
+    const toutesVisibles = chargees.length > 0 && chargees.every((m) => m!.modele.object.visible);
+    const titre = bouton("pj-repli", "", () => {
+      vuePanneau.repliee = !vuePanneau.repliee;
+      redessiner();
+    }, vuePanneau.repliee ? "Déplier la liste" : "Replier la liste");
+    titre.setAttribute("aria-expanded", String(!vuePanneau.repliee));
+    titre.append(
+      avecIcone("pj-chevron" + (vuePanneau.repliee ? "" : " ouvert"), ICO.chevron),
+      cree("span", "", etat.admin ? pluriel(n, "maquette") : `${n}/${MAQUETTES_MAX} maquettes`),
+    );
+    const actions: HTMLElement[] = [];
+    if (chargees.length > 1 && !vuePanneau.repliee) {
+      actions.push(
+        bouton("lien", toutesVisibles ? "Tout masquer" : "Tout afficher", async () => {
+          await afficherMaquettes(chargees.map((m) => m!.id), !toutesVisibles);
+          redessiner();
+        }),
+      );
+    }
+    const { b, liste: l } = boite(titre, actions);
+    liste = l;
+    if (vuePanneau.repliee) b.classList.add("repliee");
+    zone.append(b);
+    remplir();
+  }
+
+  function remplir() {
+    if (!liste) return;
+    liste.replaceChildren();
+    if (vuePanneau.repliee) return;
+    const filtre = sansAccents(vuePanneau.filtre.trim());
+    const trouves = filtre ? etat.fichiers.filter((f) => sansAccents(f.nom).includes(filtre)) : etat.fichiers;
+    const montres = filtre || vuePanneau.toutesMaquettes ? trouves : trouves.slice(0, PREMIERES_LIGNES);
+    for (const f of montres) liste.append(ligneMaquette(f, remplir));
+    if (filtre && !trouves.length) liste.append(cree("p", "pj-aucun", "Aucune maquette ne correspond."));
+    if (!filtre && trouves.length > PREMIERES_LIGNES) {
+      liste.append(
+        boutonToutVoir(trouves.length, vuePanneau.toutesMaquettes, () => {
+          vuePanneau.toutesMaquettes = !vuePanneau.toutesMaquettes;
+          remplir();
+        }),
+      );
+    }
+  }
+
+  const pied = cree("div", "pj-pied");
+  if (!exempleAffiche()) {
+    pied.append(bouton("lien", "Voir la maquette d'essai", () => (fermer(), void chargerExemple())));
+  } else if (n > 0) {
+    pied.append(bouton("lien", "Revenir à mes maquettes", () => (fermer(), void ouvrirProjet(projet))));
+  }
+  if (pied.childElementCount) zone.append(pied);
+}
+
+function ligneMaquette(f: Fichier, remplir: () => void) {
+  const m = affichees.get(nomLocal(f.nom));
+  const ouverte = vuePanneau.details.has(f.id);
+  const rang = cree("div", "pj-ligne pj-maq" + (ouverte ? " ouverte" : ""));
+  const tete = cree("div", "pj-ligne-tete");
+  const deplier = bouton("pj-deplier", "", () => {
+    if (ouverte) vuePanneau.details.delete(f.id);
+    else vuePanneau.details.add(f.id);
+    remplir();
+  }, ouverte ? "Replier" : "Détails et actions");
+  deplier.setAttribute("aria-expanded", String(ouverte));
+  const pastille = cree("span", "pj-pastille");
+  pastille.style.background = m?.hex ?? detecterLot(f.nom).hex;
+  const texte = cree("span", "pj-ligne-texte");
+  texte.append(cree("span", "pj-ligne-nom", nomLocal(f.nom)), cree("small", "", `${taille(f.taille)} · ${dateCourte(f.cree_le)}`));
+  deplier.append(avecIcone("pj-chevron" + (ouverte ? " ouvert" : ""), ICO.chevron), pastille, texte);
+  tete.append(deplier);
+  if (m) {
+    const visible = m.modele.object.visible;
+    const oeil = bouton("pj-oeil" + (visible ? " actif" : ""), "", async () => {
+      await afficherMaquettes([m.id], !visible);
+      remplir();
+    }, visible ? "Masquer dans la vue" : "Afficher dans la vue");
+    oeil.append(icone(visible ? "oeil" : "oeilBarre"));
+    tete.append(oeil);
+  }
+  rang.append(tete);
+  if (ouverte) {
+    const det = cree("div", "pj-details");
+    const infos = cree("dl", "pj-infos");
+    const info = (k: string, v: string) => infos.append(cree("dt", "", k), cree("dd", "", v));
+    info("Nom", f.nom);
+    info("Déposée le", jour(f.cree_le));
+    info("Fichier IFC", taille(f.taille));
+    info("Version rapide", f.taille_frag ? taille(f.taille_frag) : "créée à la prochaine ouverture");
+    info("Lot", m?.lot ?? detecterLot(f.nom).lot);
+    info("Dans la vue", m ? (m.modele.object.visible ? "affichée" : "masquée") : "non chargée");
+    const actions = cree("div", "pj-details-actions");
+    const tel = bouton("lien", "", () => void telechargerIfc(f), "Télécharger le fichier IFC");
+    tel.innerHTML = ICO.telecharger;
+    tel.append(cree("span", "", "Télécharger l'IFC"));
+    actions.append(tel);
+    if (createur()) actions.append(bouton("lien danger", "Supprimer", () => void mettreALaCorbeille(f)));
+    det.append(infos, actions);
+    rang.append(det);
+  }
+  return rang;
+}
+
+// --- Onglet Personnes ----------------------------------------------------------------
+
+const TEINTES_AVATAR = ["#e8833a", "#4f8ff7", "#3fb68b", "#b07ef0", "#e05d6f", "#d9a43c", "#38a8c9"];
+function avatar(p: Personne) {
+  const nom = p.prenom || p.email;
+  const initiales = (p.prenom ? p.prenom.split(/\s+/).map((x) => x[0]).join("") : p.email[0]).slice(0, 2).toUpperCase();
+  let h = 0;
+  for (const c of p.email) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const a = cree("span", "pj-avatar", initiales);
+  a.style.background = TEINTES_AVATAR[h % TEINTES_AVATAR.length];
+  a.title = nom;
+  return a;
+}
+
+function ongletPersonnes(zone: HTMLElement, projet: Projet) {
+  if (createur()) {
+    const f = formulaire("E-mail de la personne à inviter", "Inviter", "email", inviter);
+    f.classList.add("pj-inviter");
+    zone.append(
+      f,
+      cree("p", "pj-aide", "Elle reçoit un e-mail et entre dans le projet en lecture seule, même sans compte (elle le crée depuis le lien)."),
+    );
+  }
+  const titre = cree("span", "pj-boite-titre", pluriel(etat.personnes.length, "personne"));
+  const { b, liste } = boite(titre);
+  const ordre = { createur: 0, invite: 1 } as Record<string, number>;
+  const personnes = [...etat.personnes].sort((a, c) => (ordre[a.role] ?? 2) - (ordre[c.role] ?? 2));
+  const montres = vuePanneau.toutesPersonnes ? personnes : personnes.slice(0, PREMIERES_LIGNES);
+  for (const p of montres) liste.append(lignePersonne(p, projet));
+  if (personnes.length > PREMIERES_LIGNES) {
+    liste.append(
+      boutonToutVoir(personnes.length, vuePanneau.toutesPersonnes, () => {
+        vuePanneau.toutesPersonnes = !vuePanneau.toutesPersonnes;
+        redessiner();
+      }),
+    );
+  }
+  zone.append(b);
+}
+
+function lignePersonne(p: Personne, projet: Projet) {
+  const rang = cree("div", "pj-ligne pj-personne");
+  const role =
+    p.role === "createur"
+      ? { t: "Créateur", c: "createur" }
+      : p.role === "invite"
+        ? { t: "Lecture seule", c: "invite" }
+        : { t: "En attente", c: "attente" };
+  const texte = cree("span", "pj-ligne-texte");
+  texte.append(cree("span", "pj-ligne-nom", p.prenom || p.email));
+  if (p.prenom) texte.append(cree("small", "", p.email));
+  rang.append(avatar(p), texte, cree("span", `pj-badge ${role.c}`, role.t));
+  if (createur() && p.role !== "createur") {
+    const actions = cree("div", "pj-ligne-actions");
+    if (p.role !== "invite") {
+      actions.append(
+        bouton("lien", "Renvoyer", async () => {
+          const erreur = await inviter(p.email);
+          if (erreur) alerte(erreur);
+        }, "Renvoyer l'e-mail d'invitation"),
+      );
+    }
+    actions.append(
+      bouton("lien danger", "Retirer", async () => {
+        const qui = p.prenom || p.email;
+        const oui = await confirmer(
+          p.role === "invite" ? "Retirer cette personne ?" : "Annuler l'invitation ?",
+          p.role === "invite"
+            ? `${qui} n'aura plus accès au projet « ${projet.nom} ». Vous pourrez l'inviter à nouveau.`
+            : `Le lien envoyé à ${p.email} ne fonctionnera plus.`,
+          p.role === "invite" ? "Retirer" : "Annuler l'invitation",
+          true,
+        );
+        if (!oui) return redessiner();
+        const requete =
+          p.role === "invite"
+            ? nuage.from("membres").delete().eq("projet_id", projet.id).eq("utilisateur_id", p.utilisateur_id)
+            : nuage.from("invitations").delete().eq("projet_id", projet.id).eq("email", p.email);
+        const { error } = await requete;
+        if (error) {
+          alerte(messageErreur(error));
+          return redessiner();
+        }
+        await chargerDetails();
+        ouvrirPanneau(p.role === "invite" ? `${qui} n'a plus accès au projet.` : `Invitation de ${p.email} annulée.`);
+      }, p.role === "invite" ? "Retirer l'accès" : "Annuler l'invitation"),
+    );
+    rang.append(actions);
+  }
+  return rang;
+}
+
+// --- Onglet Corbeille ----------------------------------------------------------------
+
+function ongletCorbeille(zone: HTMLElement, projet: Projet) {
+  zone.append(cree("p", "pj-aide", `Les maquettes supprimées restent ici ${CORBEILLE_JOURS} jours, puis sont effacées.`));
+  const { b, liste } = boite(cree("span", "pj-boite-titre", pluriel(etat.corbeille.length, "maquette")));
+  for (const f of etat.corbeille) {
+    const reste = jours(f.supprime_le!);
+    const rang = cree("div", "pj-ligne");
+    const texte = cree("span", "pj-ligne-texte");
+    texte.append(
+      cree("span", "pj-ligne-nom", nomLocal(f.nom)),
+      cree("small", "", `${taille(f.taille)} · effacée dans ${pluriel(reste, "jour")}`),
+    );
+    const actions = cree("div", "pj-ligne-actions");
+    actions.append(
+      bouton("lien", "Restaurer", async () => {
+        const { error } = await nuage.from("maquettes").update({ supprime_le: null }).eq("id", f.id);
+        if (error) {
+          alerte(error.code === "23505" ? "Une maquette du projet porte déjà ce nom : supprimez-la d'abord." : messageErreur(error));
+          return;
+        }
+        await chargerDetails();
+        majBandeau();
+        await ouvrirProjet(projet);
+        ouvrirPanneau(`« ${f.nom} » est de retour dans le projet.`, etat.corbeille.length ? "corbeille" : "maquettes");
+      }),
+      bouton("lien danger", "Effacer", async () => {
+        const oui = await confirmer(
+          "Effacer définitivement ?",
+          `« ${f.nom} » sera effacée tout de suite, sans retour possible.`,
+          "Effacer définitivement",
+          true,
+        );
+        if (oui) {
+          await nuage.storage.from("maquettes").remove(cheminsDe(f));
+          const { error } = await nuage.from("maquettes").delete().eq("id", f.id);
+          if (error) alerte(messageErreur(error));
+          await chargerDetails();
+        }
+        redessiner();
+      }),
+    );
+    rang.append(texte, actions);
+    liste.append(rang);
+  }
+  zone.append(b);
+}
+
+// --- Onglet Réglages -----------------------------------------------------------------
+
+function ongletReglages(zone: HTMLElement, projet: Projet) {
+  if (createur()) {
+    zone.append(cree("div", "pj-section", "Nom du projet"));
+    const f = cree("form", "modale-form pj-renommer");
+    const saisie = cree("input");
+    saisie.value = projet.nom;
+    saisie.maxLength = 80;
+    saisie.required = true;
+    const ok = cree("button", "btn", "Renommer");
+    ok.type = "submit";
+    const retour = cree("p", "modale-retour");
+    f.append(saisie, ok, retour);
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const nom = saisie.value.trim();
+      if (!nom || nom === projet.nom) return;
+      ok.disabled = true;
+      const { error } = await nuage.from("projets").update({ nom }).eq("id", projet.id);
+      ok.disabled = false;
+      if (error) {
+        retour.textContent = messageErreur(error);
+        return;
+      }
+      projet.nom = nom;
+      const p = etat.projets.find((x) => x.id === projet.id);
+      if (p) p.nom = nom;
+      majBandeau();
+      redessiner("Projet renommé.");
+    });
+    zone.append(f);
+  }
+
+  zone.append(cree("div", "pj-section", "Accès"));
+  const acces = cree("dl", "pj-infos pj-infos-large");
+  const r = roleDansProjet(projet);
+  acces.append(
+    cree("dt", "", "Votre rôle"),
+    cree("dd", "", r.texte),
+    cree("dt", "", "Maquettes"),
+    cree("dd", "", etat.admin ? String(etat.fichiers.length) : `${etat.fichiers.length} sur ${MAQUETTES_MAX}`),
+    cree("dt", "", "Invités"),
+    cree("dd", "", createur() ? "lecture seule, 20 au maximum" : "lecture seule"),
+  );
+  zone.append(acces);
+
+  const danger = cree("div", "pj-danger");
+  danger.append(cree("div", "pj-danger-titre", "Zone sensible"));
+  const rang = cree("div", "pj-danger-ligne");
+  const texte = cree("div", "pj-danger-texte");
+  if (createur()) {
+    texte.append(
+      cree("strong", "", "Supprimer le projet"),
+      cree("span", "", "Maquettes, corbeille et accès des invités effacés tout de suite, sans retour."),
+    );
+    rang.append(
+      texte,
+      bouton("btn pj-btn-danger", "Supprimer", async () => {
+        const oui = await confirmer(
+          "Supprimer le projet ?",
+          `Le projet « ${projet.nom} », ses ${etat.fichiers.length + etat.corbeille.length} maquette(s), corbeille comprise, ` +
+            `et les accès des personnes invitées seront effacés tout de suite, sans corbeille ni retour possible.`,
+          "Supprimer le projet",
+          true,
+        );
+        if (!oui) return redessiner();
+        const chemins = [...etat.fichiers, ...etat.corbeille].flatMap(cheminsDe);
+        if (chemins.length) await nuage.storage.from("maquettes").remove(chemins);
+        const { error } = await nuage.from("projets").delete().eq("id", projet.id);
+        if (error) return alerte(messageErreur(error));
+        vuePanneau.onglet = "maquettes";
+        fermer();
+        await chargerProjets();
+        await ouvrirProjet(etat.projets[0] ?? null);
+      }),
+    );
+  } else if (!etat.projets.some((p) => p.id === projet.id)) {
+    texte.append(cree("strong", "", "Accès administrateur"), cree("span", "", "Vous consultez ce projet en lecture seule."));
+    rang.append(texte);
+  } else {
+    texte.append(cree("strong", "", "Quitter ce projet"), cree("span", "", "Le créateur pourra vous inviter à nouveau."));
+    rang.append(
+      texte,
+      bouton("btn pj-btn-danger", "Quitter", async () => {
+        const oui = await confirmer(
+          "Quitter le projet ?",
+          `Vous ne verrez plus les maquettes de « ${projet.nom} ». Le créateur pourra vous inviter à nouveau.`,
+          "Quitter",
+        );
+        if (!oui) return redessiner();
+        await nuage.from("membres").delete().eq("projet_id", projet.id).eq("utilisateur_id", etat.moi.id);
+        vuePanneau.onglet = "maquettes";
+        fermer();
+        await chargerProjets();
+        await ouvrirProjet(etat.projets[0] ?? null);
+      }),
+    );
+  }
+  danger.append(rang);
+  zone.append(danger);
 }
 
 btnProjet.addEventListener("click", () => ouvrirPanneau());
@@ -950,7 +1347,7 @@ function ouvrirMenuCompte() {
     menu.append(b);
   };
   if (etat.admin) item("admin", ICONES_MENU.admin, "Panneau admin", () => void ouvrirAdmin());
-  item("", ICONES_MENU.projets, "Mes projets", () => ouvrirPanneau());
+  item("", ICONES_MENU.projets, "Mes projets", ouvrirMesProjets);
   item("", ICONES_MENU.versions, "Versions et mises à jour", () => ouvrirVersions());
   item(
     "",

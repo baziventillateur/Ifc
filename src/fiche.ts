@@ -71,6 +71,9 @@ export function definirModeClic(f: ModeClic | null, curseur = "crosshair") {
   canvas.style.cursor = f ? curseur : "";
 }
 
+/** Touchers déjà traités ailleurs (objet ajouté touché…) : la fiche les ignore. */
+export const touchersPris = new WeakSet<Event>();
+
 let depart: { x: number; y: number; n: number } | null = null;
 let doigts = 0;
 canvas.addEventListener("pointerdown", (e) => {
@@ -85,6 +88,7 @@ canvas.addEventListener("pointerup", (e) => {
   doigts = Math.max(0, doigts - 1);
   const d = depart;
   depart = null;
+  if (touchersPris.has(e)) return;
   // Le clic droit ouvre le menu d'apparence (menu-selection.ts), pas la fiche.
   if (e.pointerType === "mouse" && e.button !== 0) return;
   if (!d || d.n > 1 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return;

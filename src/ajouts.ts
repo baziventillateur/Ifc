@@ -10,7 +10,7 @@ import * as THREE from "three";
 import { jouerBruitage } from "./sons";
 import { alerte, bouton, brancherProche, cree, el, monde, rafraichir } from "./noyau";
 import { changement, maquettes, visibles, type Maquette } from "./registre";
-import { definirModeClic, modeClicActif, selectionChangee, viser } from "./fiche";
+import { definirModeClic, modeClicActif, selectionChangee, touchersPris, viser } from "./fiche";
 import { enregistrerOutil, marquerOutil, ouvrirOutil, outilActif } from "./outils/panneau";
 import { indexDeTout } from "./index-elements";
 import { libelleCategorie } from "./libelles";
@@ -375,18 +375,16 @@ function ajoutSous(x: number, y: number): string | null {
   const touche = rayon.intersectObjects(cibles, true).find((i) => i.object.type === "Mesh");
   return (touche?.object.userData.ajout as string | undefined) ?? null;
 }
-let appui: { id: string; x: number; y: number } | null = null;
+let appui: { id: string; x: number; y: number; pointeur: number } | null = null;
+// Le doigt posé sur un objet ajouté laisse la caméra libre (glisser = tourner la vue,
+// en visite comme en vue extérieure) ; seul un toucher bref choisit l'objet.
 toile.addEventListener(
   "pointerdown",
   (e) => {
     appui = null;
     if (modeClicActif() || e.button > 0) return;
     const id = ajoutSous(e.clientX, e.clientY);
-    if (!id) return;
-    appui = { id, x: e.clientX, y: e.clientY };
-    // Ni la caméra ni la fiche ne prennent ce toucher.
-    e.stopImmediatePropagation();
-    e.preventDefault();
+    if (id) appui = { id, x: e.clientX, y: e.clientY, pointeur: e.pointerId };
   },
   { capture: true },
 );
@@ -395,12 +393,15 @@ toile.addEventListener(
   (e) => {
     const a = appui;
     appui = null;
-    if (!a || Math.hypot(e.clientX - a.x, e.clientY - a.y) > 10) return;
+    if (!a || a.pointeur !== e.pointerId || Math.hypot(e.clientX - a.x, e.clientY - a.y) > 10) return;
+    // La fiche de l'élément de maquette situé derrière ne s'ouvre pas.
+    touchersPris.add(e);
     choisir(a.id === choisi ? null : a.id);
     if (choisi && outilActif() !== "objets") ouvrirOutil("objets");
   },
   { capture: true },
 );
+toile.addEventListener("pointercancel", () => (appui = null), { capture: true });
 
 function choisir(id: string | null) {
   choisi = id;

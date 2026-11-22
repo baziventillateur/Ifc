@@ -79,6 +79,14 @@ async function changerVisibilite(changements: [Maquette, boolean][], libelle = "
   changement.emit();
 }
 
+/** Affiche ou masque des maquettes chargées (panneau Projet), avec bruitage et annulation. */
+export async function afficherMaquettes(ids: string[], visible: boolean) {
+  const liste = ids.map((id) => maquettes.get(id)).filter((m): m is Maquette => !!m);
+  if (!liste.length) return;
+  const libelle = liste.length === 1 ? `« ${liste[0].id} » ${visible ? "affichée" : "masquée"}` : visible ? "tout afficher" : "tout masquer";
+  await changerVisibilite(liste.map((m) => [m, visible]), libelle);
+}
+
 /** Marque discrètement les maquettes qui contiennent un élément sélectionné. */
 function marquerChoisies() {
   const choisies = selectionIds();

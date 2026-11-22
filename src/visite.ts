@@ -26,6 +26,7 @@ import {
 import { estAdmin, hauteurTelephone } from "./nuage/projets";
 import { replierCalques } from "./maquettes";
 import { activerAvancement } from "./avancement";
+import { effetActif, reglerEffet, type Effet } from "./effets";
 import { prendrePhoto } from "./captures";
 import { inviterPleinEcran, pleinEcranModifie } from "./plein-ecran";
 import {
@@ -1170,6 +1171,32 @@ function dessiner() {
           );
         }
       }
+      // Effets « jeu vidéo » (effets.ts) : une petite ligne de cases à cocher.
+      const effets = puce("Effets", () => {
+        const deja = actions.querySelector(".visite-effets");
+        if (deja) return deja.remove();
+        const ligne = cree("div", "visite-effets");
+        const caseEffet = (e: Effet, libelle: string, aide: string) => {
+          const l = cree("label", "visite-case");
+          l.title = aide;
+          const c = cree("input");
+          c.type = "checkbox";
+          c.checked = effetActif(e);
+          c.addEventListener("change", () => {
+            reglerEffet(e, c.checked);
+            // Les touches ZQSD doivent marcher aussitôt (pas rester sur la case).
+            c.blur();
+          });
+          l.append(c, document.createTextNode(libelle));
+          return l;
+        };
+        ligne.append(
+          caseEffet("marche", "Marche", "La vue se balance légèrement à chaque pas"),
+          caseEffet("flou", "Flou des bords", "Centre net, bords flous et assombris (demande un peu plus à la carte graphique)"),
+        );
+        actions.append(ligne);
+      }, "", "Effets de jeu vidéo : marche, flou des bords");
+      if (!ar) actions.append(effets);
       const vitesse = puce(`Vitesse : ${allureVisite()}`, () => {
         vitesse.textContent = `Vitesse : ${allureSuivante()}`;
       }, "", "Vitesse de déplacement : lente, moyenne ou rapide");

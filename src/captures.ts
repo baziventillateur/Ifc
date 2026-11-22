@@ -29,6 +29,7 @@ import {
   telecharger,
 } from "./noyau";
 import { modeClicActif, viser } from "./fiche";
+import { suspendreEffets } from "./effets";
 import { nuage } from "./nuage/client";
 import { monPrenom, projetCharge } from "./nuage/projets";
 import { quitterVisite, suspendreVisite, visiteActive } from "./visite";
@@ -89,8 +90,15 @@ function reduire(source: CanvasImageSource & { width: number; height: number }, 
 async function capturer() {
   const toile = monde.renderer!.three.domElement;
   // On redessine la vue et on la copie aussitôt (le dessin WebGL n'est pas gardé ensuite).
-  monde.renderer!.update();
-  const grande = reduire(toile, IMAGE_MAX);
+  // Sans les effets de visite (flou des bords, balancement) : l'image doit être fidèle.
+  suspendreEffets(true);
+  let grande: HTMLCanvasElement;
+  try {
+    monde.renderer!.update();
+    grande = reduire(toile, IMAGE_MAX);
+  } finally {
+    suspendreEffets(false);
+  }
   flash();
   const [image, petite] = await Promise.all([versBlob(grande, 0.86), versBlob(reduire(grande, VIGNETTE), 0.8)]);
   const cap: Capture = {
@@ -1052,6 +1060,7 @@ async function voirPhoto(c: Capture) {
   const sonIcone = groupeIcones.children.find((o) => o.userData.capture === c.id);
   if (sonIcone) sonIcone.userData.masquee = true;
   suspendreVisite(true);
+  suspendreEffets(true);
   bloquerDecalage(true);
   if (avant.ortho) await definirProjection("Perspective");
 
@@ -1110,6 +1119,7 @@ async function voirPhoto(c: Capture) {
     window.removeEventListener("resize", regler);
     ecran.remove();
     if (sonIcone) sonIcone.userData.masquee = false;
+    suspendreEffets(false);
     persp.fov = avant.fov;
     persp.updateProjectionMatrix();
     if (enVisite && visiteActive()) {

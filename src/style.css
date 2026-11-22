@@ -3100,6 +3100,29 @@ a.projet-ligne {
   overflow-y: auto;
 }
 
+.visite-effets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  width: 100%;
+  padding: 2px 2px 0;
+}
+.visite-case {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--texte);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.visite-case input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent, #ff8a1f);
+}
+
 .visite-puce {
   appearance: none;
   height: 26px;

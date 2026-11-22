@@ -416,28 +416,89 @@ export function definirVisite(actif: boolean) {
   majBoutonProjection();
 }
 
-// --- Flèches du clavier : marcher dans la maquette ----------------------------------------
+// --- Clavier : marcher dans la maquette, comme dans un jeu vidéo -------------------------
+// ZQSD (clavier français) / WASD (clavier anglais) : marcher. On lit la place de la
+// touche, pas la lettre, donc les deux claviers marchent. Maj : courir.
+// Flèches : en visite (et en mode œil), elles tournent la tête ; ailleurs, elles marchent.
+// E / A (Q sur clavier anglais), Page haut / bas : monter, descendre (en visite : changer
+// d'étage, voir visite.ts).
 
-const TOUCHES = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown"]);
-const enfoncees = new Set<string>();
+type Sens = "avant" | "arriere" | "gauche" | "droite" | "haut" | "bas";
+const TOUCHES: Record<string, Sens> = {
+  ArrowUp: "avant",
+  KeyW: "avant",
+  ArrowDown: "arriere",
+  KeyS: "arriere",
+  ArrowLeft: "gauche",
+  KeyA: "gauche",
+  ArrowRight: "droite",
+  KeyD: "droite",
+  PageUp: "haut",
+  KeyE: "haut",
+  PageDown: "bas",
+  KeyQ: "bas",
+};
+const FLECHES = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+const sensDe = (e: KeyboardEvent): Sens | undefined => TOUCHES[e.key] ?? TOUCHES[e.code];
+/** Touches enfoncées (par place sur le clavier) et le sens de chacune. */
+const enfoncees = new Map<string, Sens>();
 let rapide = false;
 let dernier = 0;
 let boucle = 0;
-const VITESSE = 4; // mètres par seconde
-const VITESSE_VISITE = 1.6; // en visite : allure de marche
+const VITESSE = 4; // mètres par seconde, hors visite
+const REGARD_LACET = 100; // flèches gauche / droite : degrés par seconde
+const REGARD_TANGAGE = 70; // flèches haut / bas
+
+// Vitesse de déplacement en visite (clavier et manette), au choix.
+export type Allure = "lente" | "moyenne" | "rapide";
+const ALLURES: Record<Allure, number> = { lente: 1.5, moyenne: 3, rapide: 6 }; // m/s
+const CLE_ALLURE = "nexbim-allure";
+let allure: Allure = "moyenne";
+try {
+  const a = localStorage.getItem(CLE_ALLURE) as Allure | null;
+  if (a && a in ALLURES) allure = a;
+} catch {
+  // Moyenne par défaut.
+}
+export const allureVisite = () => allure;
+/** Vitesse de marche en visite (m/s), manette poussée à fond ou touche enfoncée. */
+export const vitesseVisite = () => ALLURES[allure];
+/** Passe à la vitesse suivante : lente → moyenne → rapide → lente. */
+export function allureSuivante(): Allure {
+  const ordre: Allure[] = ["lente", "moyenne", "rapide"];
+  allure = ordre[(ordre.indexOf(allure) + 1) % ordre.length];
+  try {
+    localStorage.setItem(CLE_ALLURE, allure);
+  } catch {
+    // Gardée pour la session.
+  }
+  return allure;
+}
 
 function pas(t: number) {
   boucle = 0;
   if (!enfoncees.size) return;
   const dt = Math.min(0.25, (t - dernier) / 1000);
   dernier = t;
-  const facteur = rapide ? 3 : 1;
-  const sens = (plus: string, moins: string) => (enfoncees.has(plus) ? 1 : 0) - (enfoncees.has(moins) ? 1 : 0);
-  const avance = sens("ArrowUp", "ArrowDown");
+  const facteur = rapide ? (visite ? 2 : 3) : 1;
+  const tete = oeil || visite;
+  const marche = new Set<Sens>();
+  const regarde = new Set<Sens>();
+  for (const [code, s] of enfoncees) (tete && FLECHES.has(code) ? regarde : marche).add(s);
+  const sens = (dans: Set<Sens>, plus: Sens, moins: Sens) => (dans.has(plus) ? 1 : 0) - (dans.has(moins) ? 1 : 0);
+  const avance = sens(marche, "avant", "arriere");
   // Gauche / droite : pas de côté, comme dans un jeu vidéo (la souris sert à tourner la tête).
-  const cote = sens("ArrowRight", "ArrowLeft");
-  // En visite, on reste à hauteur d'yeux sur le niveau choisi.
-  const monte = visite ? 0 : sens("PageUp", "PageDown");
+  const cote = sens(marche, "droite", "gauche");
+  // En visite, on reste à hauteur d'yeux : ces touches changent d'étage (visite.ts).
+  const monte = visite ? 0 : sens(marche, "haut", "bas");
+  const lacet = sens(regarde, "droite", "gauche");
+  const tangage = sens(regarde, "arriere", "avant");
+  if (lacet || tangage) {
+    const k = dt * (rapide ? 1.6 : 1);
+    if (regardExterne) {
+      if (lacet) regardExterne(lacet * REGARD_LACET * k);
+    } else tournerTete(lacet * REGARD_LACET * k, tangage * REGARD_TANGAGE * k);
+  }
 
   if (avance || cote || monte) {
     if (avance && monde.camera.projection.current === "Orthographic") {
@@ -457,7 +518,7 @@ function pas(t: number) {
     const droite = devant.clone().cross(new THREE.Vector3(0, 1, 0));
     const d = devant.multiplyScalar(avance).addScaledVector(droite, cote);
     if (d.lengthSq() > 1) d.normalize();
-    d.multiplyScalar((visite ? VITESSE_VISITE : VITESSE) * facteur * dt);
+    d.multiplyScalar((visite ? vitesseVisite() : VITESSE) * facteur * dt);
     d.y += monte * VITESSE * 0.75 * facteur * dt;
     position.add(d);
     cible.add(d);
@@ -468,13 +529,14 @@ function pas(t: number) {
 
 window.addEventListener("keydown", (e) => {
   rapide = e.shiftKey;
-  if (!TOUCHES.has(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+  const s = sensDe(e);
+  if (!s || e.ctrlKey || e.metaKey || e.altKey) return;
   const cible = e.target as HTMLElement | null;
   if (cible?.closest("input, textarea, select, [contenteditable], .dialogue")) return;
   e.preventDefault();
-  if (enfoncees.has(e.key)) return;
+  if (enfoncees.has(e.code)) return;
   if (!enfoncees.size) recentrerPivot();
-  enfoncees.add(e.key);
+  enfoncees.set(e.code, s);
   if (!boucle) {
     dernier = performance.now();
     boucle = requestAnimationFrame(pas);
@@ -482,7 +544,7 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", (e) => {
   rapide = e.shiftKey;
-  enfoncees.delete(e.key);
+  enfoncees.delete(e.code);
 });
 window.addEventListener("blur", () => enfoncees.clear());
 

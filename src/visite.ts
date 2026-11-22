@@ -12,7 +12,17 @@
 import * as THREE from "three";
 import { ajusterDecalage, alerte, bloquerDecalage, bouton, cree, definirProjection, el, estOrtho, monde, rafraichir } from "./noyau";
 import { definirModeClic, viser } from "./fiche";
-import { angleDeVisite, bloquerUnDoigt, definirOeil, definirRegardExterne, definirVisite, modeOeil } from "./navigation";
+import {
+  allureSuivante,
+  allureVisite,
+  angleDeVisite,
+  bloquerUnDoigt,
+  definirOeil,
+  definirRegardExterne,
+  definirVisite,
+  modeOeil,
+  vitesseVisite,
+} from "./navigation";
 import { estAdmin, hauteurTelephone } from "./nuage/projets";
 import { replierCalques } from "./maquettes";
 import { activerAvancement } from "./avancement";
@@ -37,7 +47,6 @@ import { maquettes, visibles } from "./registre";
 /** Hauteur de la vue au-dessus du sol : celle du téléphone tenu en main (1,40 m, ou taille − 30 cm). */
 const yeux = () => hauteurTelephone();
 const COUPE_PLAN = 1.2; // hauteur de la coupe du plan au-dessus du sol (m)
-const MARCHE = 1.4; // allure à la manette (m/s), manette poussée à fond
 const CALAGE_MS = 5000; // durée de mesure GPS sur chaque point
 const PRECISION_MAX = 35; // au-delà (m), une position GPS est ignorée
 const ECART_MIN = 8; // distance minimale entre les deux points du calage (m)
@@ -327,7 +336,7 @@ function avancer(t: number) {
       const droite = devant.clone().cross(new THREE.Vector3(0, 1, 0));
       const d = devant.multiplyScalar(-poussee.y).addScaledVector(droite, poussee.x);
       if (d.lengthSq() > 1) d.normalize();
-      d.multiplyScalar(MARCHE * dt);
+      d.multiplyScalar(vitesseVisite() * dt);
       decaler(d.x, d.z);
     }
   } else if (poussee) {
@@ -993,9 +1002,10 @@ async function choisirNiveau(sol: Sol) {
   niveau = sol;
   if (enMarche) {
     if (arActif() && ancre && ancien) ancre.p0.y += sol.y - ancien.y;
-    // Changement de niveau en marchant : même endroit, autre étage.
+    // Changement de niveau en marchant : même endroit, autre étage (montée rapide).
     const p = controles.getPosition(new THREE.Vector3());
-    decaler(0, 0);
+    if (arActif()) decaler(0, 0);
+    else monterVers(sol.y + yeux());
     place = new THREE.Vector3(p.x, sol.y, p.z);
     alerte(`Niveau ${sol.nom}.`, 2000);
     dessiner();
@@ -1006,6 +1016,34 @@ async function choisirNiveau(sol: Sol) {
   armerClic();
   bloquerUnDoigt(true);
   dessiner();
+}
+
+/** Glisse l'œil à la hauteur voulue (les autres mouvements continuent pendant ce temps). */
+let montee = 0;
+function monterVers(y: number) {
+  const id = ++montee;
+  const depart = controles.getPosition(new THREE.Vector3()).y;
+  const t0 = performance.now();
+  const DUREE = 420;
+  const pas = (t: number) => {
+    if (id !== montee || !actif || etape !== "marche") return;
+    // L'horodatage de l'image peut précéder l'appel : on borne à 0.
+    const k = THREE.MathUtils.clamp((t - t0) / DUREE, 0, 1);
+    const y1 = depart + (y - depart) * (1 - (1 - k) ** 3);
+    const p = controles.getPosition(new THREE.Vector3());
+    const c = controles.getTarget(new THREE.Vector3());
+    void controles.setLookAt(p.x, y1, p.z, c.x, c.y + y1 - p.y, c.z, false);
+    if (k < 1) requestAnimationFrame(pas);
+  };
+  requestAnimationFrame(pas);
+}
+
+/** Étage au-dessus (+1) ou en dessous (−1), au clavier. */
+function changerNiveau(sens: 1 | -1) {
+  if (!niveau || enAnimation) return;
+  const s = niveaux[niveaux.indexOf(niveau) + sens];
+  if (!s) return alerte(sens > 0 ? "Vous êtes au dernier niveau." : "Vous êtes au niveau le plus bas.", 1800);
+  void choisirNiveau(s);
 }
 
 /** Retour au choix du niveau : la vue d'avant la visite revient (on peut y toucher la maquette). */
@@ -1089,7 +1127,7 @@ function dessiner() {
             ? "La vue suit votre position. Un doigt pour regarder autour de vous."
             : tactile()
               ? "Manette pour avancer, un doigt pour regarder autour de vous."
-              : "Flèches pour avancer, clic maintenu pour regarder autour de vous.";
+              : "ZQSD pour marcher (Maj : courir), flèches ou clic maintenu pour regarder. E / Espace : étage au-dessus, A / C : en dessous.";
       const niveauBtn = puce("Niveau", () => {
         const deja = actions.querySelector(".visite-niveaux");
         if (deja) return deja.remove();
@@ -1132,6 +1170,10 @@ function dessiner() {
           );
         }
       }
+      const vitesse = puce(`Vitesse : ${allureVisite()}`, () => {
+        vitesse.textContent = `Vitesse : ${allureSuivante()}`;
+      }, "", "Vitesse de déplacement : lente, moyenne ou rapide");
+      if (!ar && !suiviGps) actions.append(vitesse);
       actions.append(niveauBtn, puce("Plan", () => void versPlan("place"), "", "Revenir au plan pour vous replacer"));
       manette.hidden = suiviGps || ar || !tactile();
       void garderEcran(suiviGps || ar || gyro);
@@ -1294,6 +1336,22 @@ export function suspendreVisite(oui: boolean) {
   if (arActif() || gyroActif()) ancrer();
   relancer();
 }
+// Clavier, en marche : changer d'étage. E, Espace ou Page haut : au-dessus ; A (Q sur
+// clavier anglais), C, Ctrl + Espace ou Page bas : en dessous. Une pression, un étage.
+window.addEventListener("keydown", (e) => {
+  if (!actif || etape !== "marche" || suspendu || e.altKey || e.metaKey) return;
+  const cible = e.target as HTMLElement | null;
+  if (cible?.closest("input, textarea, select, [contenteditable], .dialogue")) return;
+  let sens: 1 | -1 | 0 = 0;
+  if (e.code === "Space") sens = e.ctrlKey ? -1 : 1;
+  else if (e.ctrlKey) return;
+  else if (e.code === "KeyE" || e.code === "PageUp") sens = 1;
+  else if (e.code === "KeyQ" || e.code === "KeyC" || e.code === "PageDown") sens = -1;
+  if (!sens) return;
+  // Espace ne doit pas « cliquer » le dernier bouton touché.
+  e.preventDefault();
+  if (!e.repeat) changerNiveau(sens);
+});
 window.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !actif) return;
   const cible = e.target as HTMLElement | null;

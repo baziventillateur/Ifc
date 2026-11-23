@@ -16,6 +16,7 @@ import { jouerBruitage } from "./sons";
 import {
   ajusterDecalage,
   alerte,
+  attente,
   bloquerDecalage,
   bouton,
   cree,
@@ -522,9 +523,11 @@ function majGalerie(focus?: "message") {
   const pied: HTMLElement[] = [];
   if (choix) {
     const barre = cree("div", "captures-pied");
-    const exporter = bouton("btn principal", `Exporter vers PaceApp${choix.size ? ` (${choix.size})` : ""}`, () => commencerExport());
-    exporter.disabled = !choix.size;
-    barre.append(cree("span", "captures-pied-aide", "Touchez les captures à exporter"), exporter);
+    const n = choix.size ? ` (${choix.size})` : "";
+    const enregistrer = bouton("btn", `Télécharger${n}`, () => void telechargerChoix(), "Enregistrer les images choisies sur cet appareil (plusieurs : un fichier .zip)");
+    const exporter = bouton("btn principal", `Exporter vers PaceApp${n}`, () => commencerExport());
+    enregistrer.disabled = exporter.disabled = !choix.size;
+    barre.append(cree("span", "captures-pied-aide", "Touchez les captures à télécharger ou exporter"), enregistrer, exporter);
     pied.push(barre);
   }
   const note = projet === null && captures.length ? [cree("p", "captures-note", "Maquette d'essai : les captures restent sur cet écran.")] : [];
@@ -769,6 +772,64 @@ async function envoyerVersPace(o: { titre: string; bloc: string; section: string
   majGalerie();
 }
 
+// --- Téléchargement sur l'appareil ----------------------------------------------------------
+// Nom : projet, date (2026.11.23) et heure à la seconde (12.01.37) de la capture : pas de doublon.
+const z2 = (n: number) => String(n).padStart(2, "0");
+const sansInterdits = (t: string) => t.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
+function jourPoints(d: Date) {
+  return `${d.getFullYear()}.${z2(d.getMonth() + 1)}.${z2(d.getDate())}`;
+}
+function nomFichier(c: Capture, type: string, pris?: Set<string>) {
+  const d = new Date(c.cree_le);
+  const ext = /png/.test(type) ? "png" : /webp/.test(type) ? "webp" : "jpg";
+  const base = `${sansInterdits(nomProjetCourant() || "Maquette d'essai")}_${jourPoints(d)}_${z2(d.getHours())}.${z2(d.getMinutes())}.${z2(d.getSeconds())}`;
+  let nom = `${base}.${ext}`;
+  for (let k = 2; pris?.has(nom); k++) nom = `${base} (${k}).${ext}`;
+  pris?.add(nom);
+  return nom;
+}
+
+async function blobDe(c: Capture) {
+  const u = await imageDe(c);
+  return u ? (await fetch(u)).blob() : null;
+}
+
+/** Les captures choisies : une seule, l'image ; plusieurs, un .zip (un seul enregistrement). */
+async function telechargerChoix() {
+  if (!choix?.size) return;
+  const liste = captures.filter((c) => choix!.has(c.id));
+  try {
+    if (liste.length === 1) {
+      attente("Préparation de l'image…");
+      const b = await blobDe(liste[0]);
+      if (!b) throw new Error("image introuvable");
+      telecharger(nomFichier(liste[0], b.type), b);
+      return;
+    }
+    const { default: JSZip } = await import("jszip");
+    const zip = new JSZip();
+    const pris = new Set<string>();
+    let manquantes = 0;
+    for (const [i, c] of liste.entries()) {
+      attente(`Préparation des images ${i + 1} / ${liste.length}…`);
+      const b = await blobDe(c);
+      if (b) zip.file(nomFichier(c, b.type, pris), b, { date: new Date(c.cree_le) });
+      else manquantes++;
+    }
+    attente("Création du fichier .zip…");
+    // Les images sont déjà compressées : on les range telles quelles (plus rapide).
+    const archive = await zip.generateAsync({ type: "blob", compression: "STORE" });
+    const projetNom = sansInterdits(nomProjetCourant() || "Maquette d'essai");
+    telecharger(`${projetNom}_${jourPoints(new Date())}_captures (${liste.length - manquantes}).zip`, archive);
+    if (manquantes) alerte(`${manquantes} image${manquantes > 1 ? "s" : ""} introuvable${manquantes > 1 ? "s" : ""}, non incluse${manquantes > 1 ? "s" : ""}.`, 4000);
+  } catch (e) {
+    console.error(e);
+    alerte("Téléchargement impossible. Réessayez.");
+  } finally {
+    attente(null);
+  }
+}
+
 async function imageDe(c: Capture) {
   let url = images.get(c.id);
   if (url || c.locale || !projet) return url ?? vignettes.get(c.id) ?? "";
@@ -833,9 +894,8 @@ function dessinerDetail(c: Capture, focus?: "message") {
       "Remettre la caméra à cet endroit",
     ),
     bouton("visite-puce", "Télécharger", async () => {
-      const u = await imageDe(c);
-      if (!u) return;
-      telecharger(`capture-${c.cree_le.slice(0, 16).replace(/[T:]/g, "-")}.jpg`, await (await fetch(u)).blob());
+      const b = await blobDe(c);
+      if (b) telecharger(nomFichier(c, b.type), b);
     }),
     bouton("visite-puce danger", "Supprimer", () => void supprimer(c)),
   );

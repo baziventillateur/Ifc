@@ -5764,3 +5764,31 @@ body.paysage.menu-visible .poignee-menu {
   opacity: 0;
   transition: opacity 0.4s ease-out;
 }
+
+/* Pied de la sélection : Télécharger + Exporter ; sur téléphone étroit, l'aide cède la place. */
+.captures-pied .btn {
+  white-space: nowrap;
+}
+
+@media (max-width: 440px) {
+  .captures-pied-aide {
+    display: none;
+  }
+
+  .captures-pied {
+    justify-content: flex-end;
+  }
+}
+
+/* Menu des ciseaux (clic droit ou toucher sur ✂) */
+.menu-compte.menu-coupe {
+  top: auto;
+  right: auto;
+  width: auto;
+  min-width: 210px;
+  z-index: 45;
+}
+
+.menu-coupe .menu-compte-item.danger {
+  color: #ff8f8f;
+}

@@ -48,7 +48,7 @@ let majFace: () => void = () => {};
 const calque = el("etiquettes");
 const poignee = cree("button", "poignee-coupe", "✂");
 poignee.type = "button";
-poignee.title = "Glisser pour déplacer la coupe";
+poignee.title = "Glisser pour déplacer la coupe · clic droit (ou toucher) : inverser, supprimer…";
 poignee.hidden = true;
 const valeurPoignee = cree("span", "valeur-poignee", "");
 valeurPoignee.hidden = true;
@@ -100,29 +100,111 @@ function placerPoignee() {
 monde.renderer!.onAfterUpdate.add(placerPoignee);
 
 // Glisser la poignée : le plan avance le long de sa normale (trajectoire perpendiculaire à la face).
-let glisse: { x: number; y: number; depart: number; ux: number; uy: number; ppm: number } | null = null;
+// Un simple toucher (sans glisser) ou un clic droit ouvre le menu de la coupe.
+let glisse: { x: number; y: number; depart: number; ux: number; uy: number; ppm: number; bouge: boolean } | null = null;
 poignee.addEventListener("pointerdown", (e) => {
+  if (e.button === 2) return;
   const d = directionEcran();
   if (!d) return;
   e.preventDefault();
   e.stopPropagation();
+  fermerMenuCoupe();
   poignee.setPointerCapture(e.pointerId);
-  glisse = { x: e.clientX, y: e.clientY, depart: face.decalage, ux: d.ux, uy: d.uy, ppm: d.ppm };
+  glisse = { x: e.clientX, y: e.clientY, depart: face.decalage, ux: d.ux, uy: d.uy, ppm: d.ppm, bouge: false };
   poignee.classList.add("prise");
 });
 poignee.addEventListener("pointermove", (e) => {
   if (!glisse) return;
+  if (!glisse.bouge && Math.hypot(e.clientX - glisse.x, e.clientY - glisse.y) < 5) return;
+  glisse.bouge = true;
   const t = ((e.clientX - glisse.x) * glisse.ux + (e.clientY - glisse.y) * glisse.uy) / glisse.ppm;
   face.decalage = Math.round((glisse.depart + t) * 100) / 100;
   void appliquer();
 });
-const lacher = () => {
+const lacher = (e: PointerEvent) => {
+  const toucher = glisse && !glisse.bouge && e.type === "pointerup";
   glisse = null;
   poignee.classList.remove("prise");
   majFace();
+  if (toucher) ouvrirMenuCoupe();
 };
 poignee.addEventListener("pointerup", lacher);
 poignee.addEventListener("pointercancel", lacher);
+poignee.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  ouvrirMenuCoupe();
+});
+
+// --- Menu de la coupe (sur les ciseaux) ---------------------------------------------------
+let menuCoupe: HTMLElement | null = null;
+function fermerMenuCoupe() {
+  menuCoupe?.remove();
+  menuCoupe = null;
+}
+function ouvrirMenuCoupe() {
+  fermerMenuCoupe();
+  if (!face.actif) return;
+  const menu = cree("div", "menu-compte menu-coupe");
+  const item = (texte: string, action: () => void, classe = "") =>
+    bouton("menu-compte-item" + (classe ? ` ${classe}` : ""), texte, () => {
+      fermerMenuCoupe();
+      action();
+    });
+  menu.append(
+    item("⇄ Inverser le sens de coupe", inverserCoupe),
+    ...(face.decalage ? [item("↺ Remettre sur la face", remettreSurFace)] : []),
+    item("✂ Nouvelle coupe ailleurs", nouvelleCoupe),
+    item("✕ Supprimer le plan de coupe", supprimerCoupe, "danger"),
+  );
+  document.body.append(menu);
+  // À côté des ciseaux, sans sortir de l'écran.
+  const r = poignee.getBoundingClientRect();
+  const m = menu.getBoundingClientRect();
+  const x = Math.min(Math.max(6, r.right + 6), window.innerWidth - m.width - 6);
+  const y = Math.min(Math.max(6, r.top), window.innerHeight - m.height - 6);
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menuCoupe = menu;
+}
+document.addEventListener(
+  "pointerdown",
+  (e) => {
+    if (menuCoupe && !menuCoupe.contains(e.target as Node) && e.target !== poignee) fermerMenuCoupe();
+  },
+  true,
+);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && menuCoupe) fermerMenuCoupe();
+});
+
+/** Voir de l'autre côté : on garde l'autre moitié, au même endroit. */
+function inverserCoupe() {
+  face.origine.copy(ancre());
+  face.decalage = 0;
+  face.normale.negate();
+  jouerBruitage("coupe");
+  void appliquer();
+  majFace();
+}
+function remettreSurFace() {
+  face.decalage = 0;
+  void appliquer();
+  majFace();
+}
+function supprimerCoupe() {
+  face.actif = false;
+  armerCiseaux();
+  void appliquer();
+  majFace();
+}
+/** Les ciseaux se réarment pour un seul clic : la coupe suivante remplace celle-ci. */
+function nouvelleCoupe() {
+  aRemplacer = true;
+  armerCiseaux();
+  majFace();
+  alerte("Cliquez sur la face où poser la nouvelle coupe.", 2500);
+}
 
 async function choisirFace(e: PointerEvent) {
   const r = monde.renderer!.three.domElement.getBoundingClientRect();
@@ -144,6 +226,9 @@ async function choisirFace(e: PointerEvent) {
   face.normale.copy(n).negate();
   face.decalage = 0;
   face.actif = true;
+  aRemplacer = false;
+  // Coupe posée : les clics suivants servent de nouveau à la maquette (sélection, etc.).
+  armerCiseaux();
   jouerBruitage("coupe");
   await appliquer();
   majFace();
@@ -169,15 +254,21 @@ async function appliquer() {
 }
 
 let outilOuvert = false;
-/** Tant que l'outil Coupe est ouvert, un clic sur une face pose la coupe. */
+/** « Nouvelle coupe ailleurs » demandée : le prochain clic sur une face remplace la coupe. */
+let aRemplacer = false;
+/** Outil Coupe ouvert et pas encore de coupe (ou nouvelle coupe demandée) : un clic sur une
+ * face pose la coupe. Une fois posée, les clics ne recoupent plus. */
 function armerCiseaux() {
-  definirModeClic(outilOuvert ? choisirFace : null, CURSEUR_CISEAUX);
+  definirModeClic(outilOuvert && (!face.actif || aRemplacer) ? choisirFace : null, CURSEUR_CISEAUX);
 }
 
 export function retirerCoupes() {
   etat.h.actif = false;
   etat.v.actif = false;
   face.actif = false;
+  aRemplacer = false;
+  fermerMenuCoupe();
+  armerCiseaux();
   void appliquer();
   majFace();
 }
@@ -245,27 +336,24 @@ enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
     zoneFace.replaceChildren();
     if (face.actif) {
       zoneFace.append(
-        note(`Coupe posée, décalée de ${nombre(face.decalage)} m. Glissez ✂ pour la déplacer, ou cliquez sur une autre face.`),
+        note(
+          aRemplacer
+            ? "Cliquez sur la face où poser la nouvelle coupe."
+            : `Coupe posée, décalée de ${nombre(face.decalage)} m. Glissez ✂ pour la déplacer ; clic droit (ou toucher) sur ✂ pour l'inverser ou la supprimer.`,
+        ),
       );
       const rang = cree("div", "puces");
       rang.append(
-        bouton("puce", "Garder l'autre côté", () => {
-          face.origine.copy(ancre());
-          face.decalage = 0;
-          face.normale.negate();
-          void appliquer();
-          majFace();
-        }),
-        bouton("puce", "Remettre sur la face", () => {
-          face.decalage = 0;
-          void appliquer();
-          majFace();
-        }),
-        bouton("puce danger", "Retirer", () => {
-          face.actif = false;
-          void appliquer();
-          majFace();
-        }),
+        bouton("puce", "Inverser le sens", inverserCoupe, "Voir de l'autre côté de la coupe"),
+        bouton("puce", "Remettre sur la face", remettreSurFace),
+        bouton("puce" + (aRemplacer ? " actif" : ""), "Nouvelle coupe", () => {
+          if (aRemplacer) {
+            aRemplacer = false;
+            armerCiseaux();
+            majFace();
+          } else nouvelleCoupe();
+        }, "Poser la coupe sur une autre face"),
+        bouton("puce danger", "Supprimer", supprimerCoupe),
       );
       zoneFace.append(rang);
     } else {

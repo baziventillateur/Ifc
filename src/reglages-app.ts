@@ -13,6 +13,7 @@ import {
   PERSO,
   sonPerso,
   sonsPerso,
+  ARRIVEE_TELEPORT,
   jouerBruitage,
   prechargerBruitages,
   volumeBruitages,
@@ -87,7 +88,7 @@ function dureeDe(fichier: File) {
 function ligneBruitage(e: Evenement) {
   const choisir = (cle: string) => {
     choisirBruitage(e, cle);
-    jouerBruitage(e, { choix: cle, arrivee: e === "chute" ? 0.55 : e === "saut" ? 0.5 : 0 });
+    jouerBruitage(e, { choix: cle, arrivee: e === "chute" ? 0.55 : e === "saut" ? 0.5 : e === "teleport" ? ARRIVEE_TELEPORT : 0 });
   };
   const ligne = ligneChoix(BRUITAGES[e].titre, BRUITAGES[e].choix, choixBruitage(e), choisir);
   const puces = ligne.querySelector<HTMLElement>(".admin-son-puces")!;

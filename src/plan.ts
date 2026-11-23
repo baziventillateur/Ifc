@@ -153,7 +153,7 @@ function couper(
 type Visite = {
   niveaux: Sol[];
   /** Se rendre à un endroit d'un niveau (toucher sur le plan). */
-  allerA: (sol: Sol, x: number, z: number) => void;
+  allerA: (sol: Sol, x: number, z: number, teleport?: boolean) => void;
   /** Étage au-dessus (+1) ou en dessous (−1). */
   etage?: (sens: 1 | -1) => void;
   /** Étages accessibles (null : boutons cachés, par exemple en anti-gravité). */
@@ -562,10 +562,10 @@ export function ouvrirGlobal() {
   };
   boucleGlobale = requestAnimationFrame(tour);
 }
-export function fermerGlobal() {
+export function fermerGlobal(sonFermeture = true) {
   if (fond.hidden) return;
   fond.hidden = true;
-  jouerBruitage("carte_ferme");
+  if (sonFermeture) jouerBruitage("carte_ferme");
   cancelAnimationFrame(boucleGlobale);
 }
 
@@ -625,9 +625,10 @@ toileGlobale.addEventListener("click", (e) => {
   const x = (sx - vers.ox) / vers.echelle;
   const z = (sy - vers.oy) / vers.echelle;
   const photo = photosDe(niveauGlobal).find((ph) => Math.hypot(ph.p[0] - x, ph.p[2] - z) * vers.echelle < 14);
-  fermerGlobal();
+  // Vers un endroit : c'est le son de téléportation qu'on entend, pas la carte qui se ferme.
+  fermerGlobal(!!photo);
   if (photo) return ouvrirPhoto(photo.id);
-  visite.allerA(niveauGlobal, x, z);
+  visite.allerA(niveauGlobal, x, z, true);
 });
 
 // Clavier : M ouvre ou ferme le plan, Échap le ferme (sans quitter la visite).

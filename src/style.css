@@ -5744,3 +5744,23 @@ body.paysage.menu-visible .poignee-menu {
     gap: 4px;
   }
 }
+
+/* Téléportation par la carte : bref éclair (entrée 0,3 s, sortie 0,4 s). */
+.teleport-eclair {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.85) 0%, rgba(170, 215, 255, 0.55) 35%, rgba(255, 138, 31, 0.18) 70%, transparent 100%);
+}
+
+.teleport-eclair.entree {
+  opacity: 0.9;
+  transition: opacity 0.3s ease-in;
+}
+
+.teleport-eclair.sortie {
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+}

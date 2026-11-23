@@ -38,7 +38,7 @@ import { replierCalques } from "./maquettes";
 import { activerAvancement } from "./avancement";
 import { effetActif, reglerEffet, type Effet } from "./effets";
 import { fermerPlan, ouvrirPlan } from "./plan";
-import { jouerBruitage } from "./sons";
+import { ARRIVEE_TELEPORT, jouerBruitage } from "./sons";
 import { prendrePhoto } from "./captures";
 import { inviterPleinEcran, pleinEcranModifie } from "./plein-ecran";
 import {
@@ -1336,8 +1336,9 @@ const lienPlan = {
     const i = niveaux.indexOf(niveau);
     return { haut: i < niveaux.length - 1, bas: i > 0 };
   },
-  allerA(sol: Sol, x: number, z: number) {
+  allerA(sol: Sol, x: number, z: number, teleport = false) {
     if (!actif || etape !== "marche") return;
+    if (teleport) return teleporter(() => lienPlan.allerA(sol, x, z));
     const p = controles.getPosition(new THREE.Vector3());
     const d = controles.getTarget(new THREE.Vector3()).sub(p);
     const ancien = niveau;
@@ -1357,6 +1358,25 @@ const lienPlan = {
     void rafraichir();
   },
 };
+
+// Téléportation (toucher sur la carte) : son de départ, bref éclair, on arrive au moment où
+// l'éclair est le plus fort, avec le son d'atterrissage.
+const eclair = cree("div", "teleport-eclair");
+document.body.append(eclair);
+let teleportEnCours = 0;
+function teleporter(arriver: () => void) {
+  const id = ++teleportEnCours;
+  jouerBruitage("teleport", { arrivee: ARRIVEE_TELEPORT });
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return arriver();
+  eclair.classList.remove("sortie");
+  eclair.classList.add("entree");
+  window.setTimeout(() => {
+    if (id !== teleportEnCours) return;
+    arriver();
+    eclair.classList.replace("entree", "sortie");
+    window.setTimeout(() => id === teleportEnCours && eclair.classList.remove("sortie"), 420);
+  }, ARRIVEE_TELEPORT * 1000);
+}
 
 function dessiner() {
   if (actif && etape === "marche") ouvrirPlan(lienPlan);

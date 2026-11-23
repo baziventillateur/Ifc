@@ -11,6 +11,7 @@ export type Evenement =
   | "chute"
   | "carte_ouvre"
   | "carte_ferme"
+  | "teleport"
   | "affiche"
   | "masque"
   | "selection"
@@ -22,6 +23,8 @@ export type Evenement =
   | "coupe"
   | "annuler";
 type Choix = { cle: string; nom: string; couches: Couche[] };
+/** Téléportation par la carte : secondes entre le toucher et l'atterrissage. */
+export const ARRIVEE_TELEPORT = 0.3;
 
 // Position [début, durée] de chaque extrait dans bruitages.mp3, en secondes.
 const SEGMENTS = {
@@ -82,6 +85,18 @@ const SEGMENTS = {
   livre_poser: [24.2367, 0.2767],
   cuir: [24.6334, 0.2965],
   ceinture: [25.0499, 0.7225],
+  tp_monte_1: [25.8924, 0.2899],
+  tp_monte_2: [26.3023, 0.4412],
+  tp_monte_3: [26.8635, 0.3028],
+  tp_aigu_monte: [27.2863, 0.3994],
+  tp_aigu_descend: [27.8057, 0.425],
+  tp_descend_1: [28.3507, 0.4487],
+  tp_descend_2: [28.9194, 0.3523],
+  tp_pep: [29.3917, 0.4044],
+  tp_grave: [29.916, 0.6463],
+  tp_champ: [30.6823, 0.5],
+  tp_impact: [31.3023, 0.3],
+  tp_impact_2: [31.7223, 0.45],
 } as const;
 
 const AUCUN: Choix = { cle: "aucun", nom: "Aucun", couches: [] };
@@ -213,6 +228,52 @@ export const BRUITAGES: Record<Evenement, { groupe: string; titre: string; choix
         ],
       },
       { cle: "numerique", nom: "Numérique", couches: [{ s: "ui_fermer", g: 0.5 }] },
+      AUCUN,
+    ],
+  },
+  // Toucher un endroit de la carte : départ (son qui monte), puis atterrissage (« arrivee »).
+  teleport: {
+    groupe: "Carte",
+    titre: "Téléportation (toucher sur la carte)",
+    choix: [
+      {
+        cle: "teleporteur",
+        nom: "Téléporteur",
+        couches: [
+          { s: "tp_monte_1", g: 0.32 },
+          { s: "tp_champ", g: 0.2, r: 1.15 },
+          { s: "tp_descend_1", arrivee: true, g: 0.22, r: 1.1 },
+          { s: RECEPTION, arrivee: true, t: 0.02, g: 0.45 },
+        ],
+      },
+      {
+        cle: "phase",
+        nom: "Saut de phase",
+        couches: [
+          { s: "tp_monte_2", g: 0.35 },
+          { s: "tp_pep", arrivee: true, g: 0.25 },
+          { s: RECEPTION, arrivee: true, t: 0.02, g: 0.4 },
+        ],
+      },
+      {
+        cle: "lourd",
+        nom: "Atterrissage lourd",
+        couches: [
+          { s: "tp_monte_3", g: 0.3 },
+          { s: "tp_champ", g: 0.22 },
+          { s: "tp_grave", arrivee: true, g: 0.45 },
+          { s: "tp_impact", arrivee: true, t: 0.01, g: 0.3 },
+          { s: "reception_1", arrivee: true, t: 0.02, g: 0.35 },
+        ],
+      },
+      {
+        cle: "retro",
+        nom: "Rétro",
+        couches: [
+          { s: "tp_aigu_monte", g: 0.25 },
+          { s: "tp_aigu_descend", arrivee: true, g: 0.22 },
+        ],
+      },
       AUCUN,
     ],
   },

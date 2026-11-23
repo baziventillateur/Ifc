@@ -305,17 +305,84 @@ function verticalDe(a: AngleVisite) {
 }
 /** Angle de vue de la visite (pour l'animation d'entrée). */
 export const angleDeVisite = () => verticalDe(angleVisite);
-const angleActuel = () => (visite ? verticalDe(angleVisite) : angle);
+const angleActuel = () => (visite ? zoome(verticalDe(angleVisite)) : angle);
 const btnProjection = document.getElementById("btn-projection");
 const ICONE_ORTHO =
   '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4v15h15"/><path d="M5 13h6v6"/></svg>';
 
-function appliquerAngle() {
+function appliquerAngle(majMaquettes = true) {
   const cam = monde.camera.threePersp;
   if (Math.abs(cam.fov - angleActuel()) < 0.01) return;
   cam.fov = angleActuel();
   cam.updateProjectionMatrix();
-  void fragments.core.update(true);
+  if (majMaquettes) void fragments.core.update(true);
+}
+
+// --- Zoom à la molette pendant la visite -------------------------------------------------
+// À l'arrêt, la molette vers l'avant resserre l'angle de vue (comme des jumelles), vers
+// l'arrière elle le rouvre. Il revient en douceur à l'angle normal dès qu'on a marché 2 m,
+// qu'on court, qu'on se téléporte ou qu'on change d'étage. L'angle de la vraie caméra
+// change : un clic vise toujours ce qu'on voit.
+const ZOOM_MAX = 6;
+let zoom = 1;
+let zoomCible = 1;
+let boucleZoom = 0;
+let instantZoom = 0;
+let marcheDepuisZoom = 0;
+const oeilZoom = new THREE.Vector3();
+let oeilZoomPret = false;
+const oeilActuel = new THREE.Vector3();
+function zoome(vertical: number) {
+  if (zoom === 1) return vertical;
+  return THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(vertical / 2)) / zoom));
+}
+function lancerZoom() {
+  if (boucleZoom) return;
+  instantZoom = performance.now();
+  boucleZoom = requestAnimationFrame(pasZoom);
+}
+function pasZoom(t: number) {
+  boucleZoom = 0;
+  const dt = Math.min(0.1, Math.max(0, (t - instantZoom) / 1000));
+  instantZoom = t;
+  if (!visite || estOrtho()) zoomCible = 1;
+  if (zoomCible > 1) {
+    controles.getPosition(oeilActuel);
+    if (oeilZoomPret) {
+      const d = Math.hypot(oeilActuel.x - oeilZoom.x, oeilActuel.z - oeilZoom.z);
+      marcheDepuisZoom += d;
+      const saut = d > 1.5 || Math.abs(oeilActuel.y - oeilZoom.y) > 1.5; // téléportation, étage
+      if (saut || marcheDepuisZoom >= 2 || (courseEnCours() && d > 0.005)) zoomCible = 1;
+    }
+    oeilZoom.copy(oeilActuel);
+    oeilZoomPret = true;
+  }
+  // On resserre vite, on revient plus doucement.
+  zoom += (zoomCible - zoom) * (1 - Math.exp(-dt * (zoomCible > zoom ? 12 : 4.5)));
+  if (Math.abs(zoom - zoomCible) < 0.004) zoom = zoomCible;
+  appliquerAngle(zoom === zoomCible);
+  if (zoom !== zoomCible || zoomCible > 1) boucleZoom = requestAnimationFrame(pasZoom);
+}
+canvas.addEventListener(
+  "wheel",
+  (e) => {
+    if (!visite || estOrtho()) return;
+    e.preventDefault();
+    const cran = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+    zoomCible = THREE.MathUtils.clamp(zoomCible * Math.exp(-cran * 0.002), 1, ZOOM_MAX);
+    if (zoomCible < 1.02) zoomCible = 1;
+    // La distance de marche se compte à partir du dernier coup de molette.
+    marcheDepuisZoom = 0;
+    oeilZoomPret = false;
+    lancerZoom();
+  },
+  { passive: false },
+);
+/** Remet l'angle normal tout de suite (entrée ou sortie de visite). */
+function annulerZoom() {
+  zoom = zoomCible = 1;
+  if (boucleZoom) cancelAnimationFrame(boucleZoom);
+  boucleZoom = 0;
 }
 
 /** Petit cône de vision, plus ou moins ouvert selon l'angle de visite. */
@@ -501,6 +568,7 @@ btnOeil?.addEventListener("click", () => definirOeil(!oeil));
 /** Entrée et sortie de la visite : la molette et les deux doigts reprennent leur rôle à la sortie. */
 export function definirVisite(actif: boolean) {
   visite = actif;
+  annulerZoom();
   definirVueFixe(actif);
   finRegard();
   if (!actif) {

@@ -36,3 +36,4 @@ jobs:
           supabase functions deploy inviter --project-ref "$PROJET"
           supabase functions deploy invitation --project-ref "$PROJET" --no-verify-jwt
           supabase functions deploy courriels --project-ref "$PROJET" --no-verify-jwt
+          supabase functions deploy notifications --project-ref "$PROJET" --no-verify-jwt

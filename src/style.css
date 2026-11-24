@@ -5792,3 +5792,673 @@ body.paysage.menu-visible .poignee-menu {
 .menu-coupe .menu-compte-item.danger {
   color: #ff8f8f;
 }
+
+/* --- Accueil des nouveaux venus (présentation animée) ---------------------------------------- */
+.nb-accueil {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+  background: radial-gradient(120% 90% at 50% 0%, rgba(255, 138, 31, 0.14), transparent 55%), rgba(8, 11, 15, 0.86);
+  backdrop-filter: blur(6px);
+  animation: nb-fondu 0.3s ease-out;
+}
+
+.nb-accueil.sortie {
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+@keyframes nb-fondu {
+  from {
+    opacity: 0;
+  }
+}
+
+.nb-accueil-carte {
+  position: relative;
+  width: min(420px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--bord);
+  border-radius: 18px;
+  background: linear-gradient(160deg, #161c24, #0f1318 70%);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.nb-accueil-passer {
+  appearance: none;
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--doux);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.nb-accueil-scene {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 18px 6px;
+  touch-action: pan-y;
+}
+
+.nb-accueil-scene.vers-gauche .nb-accueil-page {
+  animation: nb-entre-droite 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.nb-accueil-scene.vers-droite .nb-accueil-page {
+  animation: nb-entre-gauche 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes nb-entre-droite {
+  from {
+    opacity: 0;
+    transform: translateX(36px);
+  }
+}
+
+@keyframes nb-entre-gauche {
+  from {
+    opacity: 0;
+    transform: translateX(-36px);
+  }
+}
+
+.nb-accueil-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.nb-accueil-illu {
+  width: min(240px, 72vw);
+  margin: 4px 0 6px;
+}
+
+.nb-illu {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.nb-accueil-titre {
+  margin: 4px 0 6px;
+  font-size: 19px;
+  line-height: 1.25;
+  letter-spacing: -0.2px;
+}
+
+.nb-accueil-texte {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #c9d1dc;
+}
+
+.nb-accueil-liste {
+  width: 100%;
+  margin: 12px 0 2px;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.nb-accueil-liste li {
+  position: relative;
+  margin: 0 0 6px;
+  padding: 7px 10px 7px 30px;
+  border: 1px solid var(--bord);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 12.5px;
+  animation: nb-monte 0.4s both;
+}
+
+.nb-accueil-liste li::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 138, 31, 0.2);
+}
+
+@keyframes nb-monte {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* Comparaison : outils classiques / NexBim */
+.nb-comparaison {
+  width: 100%;
+  margin-top: 12px;
+  text-align: left;
+}
+
+.nb-comparaison-tete,
+.nb-comparaison-ligne {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 8px;
+}
+
+.nb-comparaison-tete {
+  padding: 0 4px 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--doux);
+}
+
+.nb-comparaison-tete .nexbim {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.nb-comparaison-ligne {
+  margin-bottom: 5px;
+  font-size: 12px;
+  line-height: 1.35;
+  animation: nb-monte 0.4s both;
+}
+
+.nb-comparaison-ligne .avant {
+  padding: 7px 8px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+  color: #8f9aa8;
+  text-decoration: line-through;
+  text-decoration-color: rgba(224, 93, 111, 0.6);
+}
+
+.nb-comparaison-ligne .apres {
+  position: relative;
+  padding: 7px 8px 7px 26px;
+  border: 1px solid rgba(255, 138, 31, 0.35);
+  border-radius: 9px;
+  background: rgba(255, 138, 31, 0.07);
+}
+
+.nb-comparaison-ligne .apres::before {
+  content: "✓";
+  position: absolute;
+  left: 9px;
+  top: 7px;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+/* Dernière page : installer, notifications */
+.nb-accueil-etapes {
+  width: 100%;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-align: left;
+}
+
+.nb-etape {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border: 1px solid var(--bord);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.nb-etape.faite {
+  border-color: rgba(63, 182, 139, 0.45);
+  background: rgba(63, 182, 139, 0.08);
+}
+
+.nb-etape-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #1a1206;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.nb-etape.faite .nb-etape-num {
+  background: #3fb68b;
+  color: #fff;
+}
+
+.nb-etape-texte {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12.5px;
+}
+
+.nb-etape-texte small {
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: var(--doux);
+}
+
+.nb-etape .btn {
+  flex: none;
+  padding: 5px 10px;
+}
+
+.nb-accueil-fin {
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  color: var(--doux);
+}
+
+.nb-accueil-pied {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 14px;
+}
+
+.nb-accueil-points {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+}
+
+.nb-accueil-point {
+  appearance: none;
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #3a4554;
+  cursor: pointer;
+  transition: width 0.25s, background 0.25s;
+}
+
+.nb-accueil-point.actif {
+  width: 20px;
+  background: var(--accent);
+}
+
+.nb-accueil-retour,
+.nb-accueil-suivant {
+  flex: none;
+  min-width: 82px;
+  padding: 7px 12px;
+}
+
+/* Animations des illustrations */
+.illu-batiment .etage {
+  animation: nb-etage 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes nb-etage {
+  from {
+    opacity: 0;
+    transform: translateY(-26px);
+  }
+}
+
+.illu-batiment .scan {
+  animation: nb-scan 3.2s ease-in-out 1.4s infinite;
+  opacity: 0;
+}
+
+@keyframes nb-scan {
+  0% {
+    opacity: 0;
+    transform: translateY(100px);
+  }
+  15% {
+    opacity: 0.9;
+  }
+  85% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+
+.illu-batiment .badge-ifc {
+  animation: nb-pop 0.45s 1.5s both;
+  transform-origin: 196px 25px;
+}
+
+@keyframes nb-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+.illu-visite .pastilles {
+  animation: nb-pouls 2.4s ease-in-out infinite;
+  transform-origin: 193px 142px;
+}
+
+@keyframes nb-pouls {
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+.illu-coupe .plan-coupe {
+  animation: nb-glisse 4s ease-in-out infinite;
+}
+
+@keyframes nb-glisse {
+  0%,
+  100% {
+    transform: translateX(-30px);
+  }
+  50% {
+    transform: translateX(26px);
+  }
+}
+
+.illu-coupe .cote line {
+  animation: nb-trace 3s ease-out 0.4s infinite;
+}
+
+@keyframes nb-trace {
+  0% {
+    stroke-dashoffset: 60;
+  }
+  40%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.illu-partage .epingle {
+  animation: nb-pop 0.45s 0.5s both;
+  transform-origin: 70px 68px;
+}
+
+.illu-partage .bulle {
+  animation: nb-monte 0.5s 0.9s both;
+}
+
+.illu-partage .avatars circle,
+.illu-partage .avatars text {
+  animation: nb-pop 0.4s 1.3s both;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.illu-partage .fleche {
+  animation: nb-tirets 1.2s linear infinite;
+}
+
+@keyframes nb-tirets {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+.illu-etapes .appli {
+  animation: nb-pop 0.5s 0.3s both;
+  transform-origin: 120px 60px;
+}
+
+.illu-etapes .cloche {
+  animation: nb-sonne 1.6s ease-in-out 0.9s infinite;
+  transform-origin: 160px 18px;
+}
+
+@keyframes nb-sonne {
+  0%,
+  60%,
+  100% {
+    transform: rotate(0);
+  }
+  10%,
+  30% {
+    transform: rotate(14deg);
+  }
+  20%,
+  40% {
+    transform: rotate(-14deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-accueil *,
+  .nb-accueil {
+    animation: none !important;
+  }
+}
+
+/* --- Proposition (installer l'appli, notifications) ---------------------------------------- */
+.nb-proposition {
+  position: fixed;
+  right: 10px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 55;
+  width: min(360px, calc(100vw - 20px));
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 9px 9px 11px;
+  border: 1px solid var(--bord);
+  border-radius: 14px;
+  background: var(--panneau-plein);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  animation: nb-monte 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.nb-proposition.sortie {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.22s, transform 0.22s;
+}
+
+.nb-proposition-icone {
+  flex: none;
+  font-size: 22px;
+}
+
+.nb-proposition-texte {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+
+.nb-proposition-texte small {
+  font-size: 10.5px;
+  color: var(--doux);
+}
+
+.nb-proposition .btn {
+  flex: none;
+  padding: 6px 11px;
+}
+
+.nb-proposition-fermer {
+  appearance: none;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--doux);
+  cursor: pointer;
+}
+
+/* --- Feuille d'explications (installer sur iPhone, débloquer…) -------------------------------- */
+.nb-feuille-fond {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 10px;
+  background: rgba(8, 11, 15, 0.6);
+  animation: nb-fondu 0.2s;
+}
+
+.nb-feuille {
+  width: min(400px, 100%);
+  margin-bottom: env(safe-area-inset-bottom);
+  padding: 16px 16px 14px;
+  border: 1px solid var(--bord);
+  border-radius: 16px;
+  background: var(--panneau-plein);
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
+  animation: nb-monte 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.nb-feuille-icone {
+  font-size: 28px;
+  text-align: center;
+}
+
+.nb-feuille-titre {
+  margin: 4px 0 8px;
+  font-size: 16px;
+  text-align: center;
+}
+
+.nb-feuille-texte,
+.nb-feuille-note {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #c9d1dc;
+}
+
+.nb-feuille-note {
+  font-size: 11px;
+  color: var(--doux);
+}
+
+.nb-etapes {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.nb-etapes li {
+  margin-bottom: 4px;
+}
+
+.nb-etapes svg {
+  vertical-align: -3px;
+}
+
+.nb-feuille .btn {
+  width: 100%;
+  margin-top: 6px;
+}
+
+/* --- Panneau admin : présence et notifications ---------------------------------------------- */
+.admin-chiffre.vert strong {
+  color: #3fb68b;
+}
+
+.admin-notifs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 8px;
+}
+
+.admin-case {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.admin-presence {
+  padding-left: 6px !important;
+  width: 12px;
+  padding-right: 0 !important;
+}
+
+.admin-point {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3a4554;
+}
+
+.admin-point.en-ligne {
+  background: #3fb68b;
+  box-shadow: 0 0 0 3px rgba(63, 182, 139, 0.25), 0 0 10px rgba(63, 182, 139, 0.8);
+  animation: nb-pouls 1.8s ease-in-out infinite;
+}
+
+.admin-table tr.en-ligne td {
+  background: rgba(63, 182, 139, 0.06);
+}
+
+.admin-notif {
+  white-space: nowrap;
+}
+
+.admin-notif .lien {
+  margin-left: 4px;
+  font-size: 11px;
+}
+
+.admin-tout-voir {
+  align-self: center;
+  margin: 6px auto 0;
+}
+
+/* Le corps de la fenêtre défile : le tableau garde sa hauteur au lieu d'être écrasé. */
+.modale-corps > .admin-defile,
+.modale-corps > .admin-chiffres,
+.modale-corps > .admin-notifs {
+  flex-shrink: 0;
+}
+
+.admin-notif-form {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.admin-notif-form textarea {
+  resize: vertical;
+  font: inherit;
+}

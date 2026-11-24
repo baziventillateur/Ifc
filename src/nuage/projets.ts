@@ -34,6 +34,18 @@ import {
 import { compresser, decompresser, envoyerMaquette } from "./envoi";
 import { seDeconnecter } from "./compte";
 import { numeroVersion, ouvrirVersions } from "../mise-a-jour";
+import { accueilSiNouveau, ouvrirAccueil } from "./accueil";
+import {
+  activerNotifications,
+  appliInstallee,
+  appareil,
+  demarrerAppli,
+  desactiverNotifications,
+  etatNotifications,
+  installer,
+  lieuChange,
+} from "./appli";
+import { modeVisite } from "../navigation";
 
 type Projet = { id: string; nom: string; proprietaire: string };
 type Fichier = {
@@ -256,6 +268,7 @@ async function ouvrirProjet(projet: Projet | null) {
   window.clearTimeout(minuterieModifs);
   await importerDeplacements(null);
   etat.courant = projet;
+  lieuChange();
   try {
     if (projet) localStorage.setItem(CLE_PROJET, projet.id);
   } catch {
@@ -386,6 +399,10 @@ export async function demarrerNuage(utilisateur: User) {
   if (voulu && !parLien) alerte("Ce projet n'est plus partagé avec vous.", 5000);
   else if (parLien && parLien.proprietaire !== etat.moi.id)
     alerte(`Projet « ${parLien.nom} » ouvert, en lecture seule.`, 4000);
+  // Présence (panneau admin), propositions d'installer l'appli et d'activer les notifications,
+  // et accueil animé pour un compte qui n'a encore jamais vu NexBim.
+  demarrerAppli(() => [modeVisite() ? "visite" : etat.courant ? "maquette" : "projets", etat.courant?.nom ?? ""]);
+  void accueilSiNouveau();
 }
 
 // --- Dépôt de maquettes -----------------------------------------------------------
@@ -1286,6 +1303,9 @@ async function basculerTousProjets() {
 const SVG = (d: string) =>
   `<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const ICONES_MENU = {
+  decouvrir: SVG('<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/>'),
+  installer: SVG('<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M12 7v7M9 11l3 3 3-3"/>'),
+  notifications: SVG('<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>'),
   admin: SVG('<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.3 7.5 9.5 4.3-1.2 7.5-4.9 7.5-9.5V6L12 3Z"/>'),
   projets: SVG('<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2.2h8.8A1.5 1.5 0 0 1 21 9.7v8.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5Z"/>'),
   versions: SVG('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'),
@@ -1348,6 +1368,9 @@ function ouvrirMenuCompte() {
   };
   if (etat.admin) item("admin", ICONES_MENU.admin, "Panneau admin", () => void ouvrirAdmin());
   item("", ICONES_MENU.projets, "Mes projets", ouvrirMesProjets);
+  item("", ICONES_MENU.decouvrir, "Découvrir NexBim", ouvrirAccueil);
+  if (!appliInstallee()) item("", ICONES_MENU.installer, "Installer l'appli", () => void installer());
+  item("", ICONES_MENU.notifications, "Notifications", ouvrirNotifications);
   item("", ICONES_MENU.versions, "Versions et mises à jour", () => ouvrirVersions());
   item(
     "",
@@ -1369,6 +1392,50 @@ function ouvrirMenuCompte() {
   btnCompte.setAttribute("aria-expanded", "true");
   window.addEventListener("pointerdown", dehorsMenuCompte, true);
   window.addEventListener("keydown", toucheMenuCompte, true);
+}
+
+/** Notifications sur cet appareil : état, activer / désactiver, essai. */
+async function ouvrirNotifications() {
+  const corps = ouvrirFenetre("Notifications");
+  const e = await etatNotifications();
+  corps.append(
+    cree(
+      "p",
+      "modale-aide",
+      "Une notification sur cet appareil quand une maquette est déposée dans l'un de vos projets ou quand un invité rejoint votre projet. Jamais de publicité.",
+    ),
+  );
+  if (e === "on") {
+    corps.append(
+      cree("p", "modale-info", "🔔 Activées sur cet appareil."),
+      bouton("btn", "Envoyer une notification d'essai", () => {
+        void appeler("notifications", { action: "tester" });
+        alerte("Notification d'essai envoyée.");
+      }),
+      bouton("btn", "Désactiver sur cet appareil", async () => {
+        await desactiverNotifications();
+        fermer();
+      }),
+    );
+  } else if (e === "nosup") {
+    corps.append(
+      cree(
+        "p",
+        "modale-info",
+        appareil.ios()
+          ? "Sur iPhone et iPad : installez d'abord NexBim sur l'écran d'accueil, ouvrez-le depuis son icône, puis revenez ici."
+          : "Ce navigateur ne permet pas les notifications. Essayez Chrome, Edge ou Safari.",
+      ),
+    );
+    if (appareil.ios() && !appliInstallee()) corps.append(bouton("btn principal", "Installer l'appli", () => (fermer(), void installer())));
+  } else {
+    corps.append(
+      bouton("btn principal", e === "refuse" ? "Débloquer les notifications" : "Activer les notifications", async () => {
+        fermer();
+        await activerNotifications();
+      }),
+    );
+  }
 }
 
 /** Taille de la personne : place la vue à hauteur du téléphone dans la visite. */
@@ -1441,6 +1508,14 @@ type Compte = {
   ia_questions: number;
   ia_actif: boolean;
   ia_demande: string | null;
+  en_ligne_le: string | null;
+  en_ligne_debut: string | null;
+  en_ligne_lieu: string | null;
+  en_ligne_detail: string | null;
+  appareils: Record<string, string> | null;
+  installe_le: string | null;
+  push_etat: string | null;
+  abonnements: number;
 };
 
 const jour = (d: string | null) => (d ? new Date(d).toLocaleDateString("fr-FR") : "—");
@@ -1470,7 +1545,7 @@ function celluleIA(c: Compte) {
 async function ouvrirAdmin() {
   const corps = ouvrirFenetre("Panneau admin", true);
   corps.append(cree("p", "modale-aide", "Chargement…"));
-  const { data, error } = await nuage.rpc("admin_comptes");
+  const { data, error } = await nuage.rpc("admin_comptes_presence");
   if (error) {
     corps.replaceChildren(cree("p", "modale-aide", "Accès refusé."));
     return;
@@ -1478,41 +1553,164 @@ async function ouvrirAdmin() {
   const comptes = (data ?? []) as Compte[];
   const demandes = comptes.filter((x) => x.ia_demande && !x.ia_actif).length;
   const somme = (c: (x: Compte) => number) => comptes.reduce((s, x) => s + Number(c(x)), 0);
+  const enLigne = comptes.filter(estEnLigne);
   const chiffres = cree("div", "admin-chiffres");
-  for (const [valeur, nom] of [
-    [String(comptes.length), "inscrits"],
-    [String(somme((x) => x.projets)), "projets"],
-    [String(somme((x) => x.maquettes)), "maquettes"],
-    [taille(somme((x) => x.octets)), "stockage"],
-    [String(demandes), "demandes IA"],
+  for (const [valeur, nom, classe] of [
+    [String(enLigne.length), "en ligne", enLigne.length ? "vert" : ""],
+    [String(comptes.length), "inscrits", ""],
+    [String(comptes.filter((x) => x.installe_le).length), "appli installée", ""],
+    [String(comptes.filter((x) => x.push_etat === "on").length), "notifications", ""],
+    [String(somme((x) => x.projets)), "projets", ""],
+    [String(somme((x) => x.maquettes)), "maquettes", ""],
+    [taille(somme((x) => x.octets)), "stockage", ""],
+    [String(demandes), "demandes IA", ""],
   ]) {
-    const c = cree("div", "admin-chiffre");
+    const c = cree("div", "admin-chiffre" + (classe ? ` ${classe}` : ""));
     c.append(cree("strong", "", valeur), cree("span", "", nom));
     chiffres.append(c);
   }
+
+  // Notifications de l'administrateur : être prévenu des arrivées, écrire à tous.
+  const notifs = cree("div", "admin-notifs");
+  const { data: reglage } = await nuage.from("reglages_app").select("valeur").eq("cle", "alertes_admin").maybeSingle();
+  const alertes = { arrivee: false, ...((reglage?.valeur ?? {}) as { arrivee?: boolean }) };
+  const caseArrivee = cree("label", "admin-case");
+  const coche = cree("input");
+  coche.type = "checkbox";
+  coche.checked = alertes.arrivee === true;
+  coche.addEventListener("change", async () => {
+    const { error: e } = await nuage
+      .from("reglages_app")
+      .upsert({ cle: "alertes_admin", valeur: { ...alertes, arrivee: coche.checked }, maj_le: new Date().toISOString() });
+    if (e) {
+      coche.checked = !coche.checked;
+      return alerte(messageErreur(e));
+    }
+    alertes.arrivee = coche.checked;
+    if (coche.checked && (await etatNotifications()) !== "on") await activerNotifications();
+  });
+  caseArrivee.append(coche, document.createTextNode("Me notifier quand quelqu'un ouvre NexBim"));
+  notifs.append(
+    caseArrivee,
+    bouton("btn", "Notifier tout le monde", () => ecrireNotification(null, comptes.filter((x) => x.abonnements > 0).length)),
+  );
+
   const table = cree("table", "admin-table");
   const tete = cree("tr");
-  for (const t of ["Prénom", "E-mail", "Inscrit", "Vu", "Projets", "Invité", "Maquettes", "Stockage", "IA"])
+  for (const t of ["", "Prénom", "E-mail", "Inscrit", "Vu", "Appareils", "Appli", "Notif", "Projets", "Invité", "Maquettes", "Stockage", "IA"])
     tete.append(cree("th", "", t));
   table.append(tete);
+  const lignes: HTMLTableRowElement[] = [];
   for (const c of comptes) {
     const tr = cree("tr");
-    for (const v of [
-      c.prenom || "—",
-      c.email + (c.confirme ? "" : " (non confirmé)"),
-      jour(c.inscrit_le),
-      jour(c.derniere_connexion),
-      String(c.projets),
-      String(c.invitations_recues),
-      String(c.maquettes),
-      Number(c.octets) ? taille(Number(c.octets)) : "—",
-    ])
+    const point = cree("td", "admin-presence");
+    point.append(cree("span", "admin-point" + (estEnLigne(c) ? " en-ligne" : "")));
+    point.title = estEnLigne(c)
+      ? `En ligne depuis ${depuis(c.en_ligne_debut)}${c.en_ligne_lieu ? ` · ${LIEUX[c.en_ligne_lieu] ?? c.en_ligne_lieu}` : ""}${c.en_ligne_detail ? ` · ${c.en_ligne_detail}` : ""}`
+      : c.en_ligne_le
+        ? `Vu ${depuis(c.en_ligne_le)}`
+        : "Jamais vu depuis le suivi";
+    tr.append(point);
+    for (const v of [c.prenom || "—", c.email + (c.confirme ? "" : " (non confirmé)"), jour(c.inscrit_le)]) tr.append(cree("td", "", v));
+    const vu = cree("td", "", estEnLigne(c) ? "maintenant" : c.en_ligne_le ? depuis(c.en_ligne_le) : jour(c.derniere_connexion));
+    if (estEnLigne(c) && c.en_ligne_detail) vu.title = c.en_ligne_detail;
+    tr.append(vu, cree("td", "admin-appareils", iconesAppareils(c.appareils)));
+    tr.append(cree("td", "", c.installe_le ? "📲" : "—"));
+    const notif = cree("td", "admin-notif");
+    notif.append(
+      cree("span", "", c.push_etat === "on" && c.abonnements ? "🔔" : c.push_etat === "refuse" ? "🔕" : "—"),
+    );
+    if (c.abonnements > 0)
+      notif.append(bouton("lien", "Écrire", () => ecrireNotification(c, 1), `Envoyer une notification à ${c.prenom || c.email}`));
+    tr.append(notif);
+    for (const v of [String(c.projets), String(c.invitations_recues), String(c.maquettes), Number(c.octets) ? taille(Number(c.octets)) : "—"])
       tr.append(cree("td", "", v));
     tr.append(celluleIA(c));
     tr.classList.toggle("demande-ia", !!c.ia_demande && !c.ia_actif);
+    tr.classList.toggle("en-ligne", estEnLigne(c));
     table.append(tr);
+    lignes.push(tr);
   }
+  // Premières lignes seulement (en ligne et demandes IA en tête), puis « Tout voir ».
+  const PREMIERES = 8;
+  let tout = false;
+  const toutVoir = bouton("btn admin-tout-voir", "", () => {
+    tout = !tout;
+    majLignes();
+  });
+  const majLignes = () => {
+    lignes.forEach((l, k) => (l.hidden = !tout && k >= PREMIERES));
+    toutVoir.textContent = tout ? "Réduire" : `Tout voir (${lignes.length})`;
+    toutVoir.hidden = lignes.length <= PREMIERES;
+  };
+  majLignes();
   const defile = cree("div", "admin-defile");
   defile.append(table);
-  corps.replaceChildren(chiffres, blocReglagesPas(), defile, bouton("btn", "Retour", () => ouvrirPanneau()));
+  corps.replaceChildren(chiffres, notifs, defile, toutVoir, blocReglagesPas(), bouton("btn", "Retour", () => ouvrirPanneau()));
+}
+
+const LIEUX: Record<string, string> = { visite: "en visite", maquette: "sur la maquette", projets: "dans ses projets" };
+/** En ligne : signalé il y a moins de 2 min 30. */
+const estEnLigne = (c: Compte) => !!c.en_ligne_le && Date.now() - new Date(c.en_ligne_le).getTime() < 150_000;
+function depuis(d: string | null) {
+  if (!d) return "—";
+  const min = Math.round((Date.now() - new Date(d).getTime()) / 60_000);
+  if (min < 1) return "à l'instant";
+  if (min < 60) return `il y a ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `il y a ${h} h`;
+  return new Date(d).toLocaleDateString("fr-FR");
+}
+const NOMS_APPAREILS: Record<string, string> = {
+  "ios:tel": "📱 iPhone",
+  "ios:tab": "📱 iPad",
+  "android:tel": "📱 Android",
+  "android:tab": "📱 Tablette Android",
+  "mac:ordi": "💻 Mac",
+  "windows:ordi": "💻 PC",
+  "linux:ordi": "💻 Linux",
+  "autre:ordi": "💻 Ordinateur",
+};
+function iconesAppareils(a: Record<string, string> | null) {
+  const cles = Object.keys(a ?? {}).sort((x, y) => new Date(a![y]).getTime() - new Date(a![x]).getTime());
+  return cles.length ? cles.map((k) => (NOMS_APPAREILS[k] ?? k).split(" ")[0]).join(" ") : "—";
+}
+
+/** Notification écrite par l'administrateur, à une personne ou à tous ceux qui les ont activées. */
+function ecrireNotification(c: Compte | null, n: number) {
+  const corps = ouvrirFenetre(c ? `Notifier ${c.prenom || c.email}` : "Notifier tout le monde");
+  if (!n) {
+    corps.append(cree("p", "modale-aide", "Personne n'a encore activé les notifications."));
+    return;
+  }
+  corps.append(cree("p", "modale-aide", c ? "Sur tous ses appareils où les notifications sont activées." : `${n} personne${n > 1 ? "s" : ""} avec les notifications activées.`));
+  const f = cree("form", "modale-form admin-notif-form");
+  const titre = cree("input");
+  titre.placeholder = "Titre (ex. Nouvelle version de NexBim)";
+  titre.maxLength = 80;
+  titre.required = true;
+  const texte = cree("textarea");
+  texte.placeholder = "Message (facultatif)";
+  texte.maxLength = 240;
+  texte.rows = 3;
+  const ok = cree("button", "btn principal", "Envoyer");
+  ok.type = "submit";
+  const retour = cree("p", "modale-retour");
+  f.append(titre, texte, ok, retour);
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    ok.disabled = true;
+    const { data: r, code } = await appeler<{ envoyes: number; echecs: number }>("notifications", {
+      action: "envoyer",
+      cible: c ? c.id : "tous",
+      titre: titre.value,
+      texte: texte.value,
+    });
+    ok.disabled = false;
+    if (code) return void (retour.textContent = "Envoi impossible. Réessayez.");
+    fermer();
+    alerte(r?.envoyes ? `Notification envoyée sur ${r.envoyes} appareil${r.envoyes > 1 ? "s" : ""}.` : "Aucun appareil joignable.", 4000);
+  });
+  corps.append(f);
+  titre.focus();
 }

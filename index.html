@@ -32,6 +32,10 @@
       addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault() }, { passive: false });
       addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && ['+','-','=','0','_'].includes(e.key)) e.preventDefault() });
       if('serviceWorker' in navigator) addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+      // Installation de l'appli : le navigateur la propose tôt, on garde sa demande pour notre bouton « Installer ».
+      window.__installation = null;
+      addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__installation = e; dispatchEvent(new Event('nexbim-installable')); });
+      addEventListener('appinstalled', () => { window.__installation = null; try { localStorage.setItem('nexbim-installe', '1') } catch (x) {} dispatchEvent(new Event('nexbim-installable')); });
     </script>
   </head>
   <body>

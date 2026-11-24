@@ -20,6 +20,7 @@ import {
 } from "./noyau";
 import { maquettes } from "./registre";
 import { commanderDrone } from "./drone";
+import { lieuChange } from "./nuage/appli";
 
 const canvas = monde.renderer!.three.domElement;
 const controles = monde.camera.controls;
@@ -569,6 +570,7 @@ btnOeil?.addEventListener("click", () => definirOeil(!oeil));
 export function definirVisite(actif: boolean) {
   visite = actif;
   annulerZoom();
+  lieuChange();
   definirVueFixe(actif);
   finRegard();
   if (!actif) {

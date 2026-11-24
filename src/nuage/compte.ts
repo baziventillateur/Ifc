@@ -1,5 +1,6 @@
 // Écran de connexion : connexion, création de compte, mot de passe oublié,
 // choix du mot de passe après un lien reçu par e-mail.
+import { retenirInvitation } from "./accueil";
 import type { User } from "@supabase/supabase-js";
 import { cree } from "../noyau";
 import { adresseSite, appeler, demanderProjet, erreurLien, jetonInvitation, nuage, typeLien } from "./client";
@@ -333,7 +334,8 @@ function ecranInvitation(infos: InfosInvitation, jeton: string, autreSession: bo
         if (code === "MOT_DE_PASSE") return void (message.textContent = "Mot de passe refusé : 8 caractères au minimum.");
         if (code === "PRENOM") return void (message.textContent = "Indiquez votre prénom.");
         if (code) return void (message.textContent = "La création du compte a échoué. Réessayez.");
-        // Compte créé : on entre directement dans le projet.
+        // Compte créé : on entre directement dans le projet, accueilli par la présentation de NexBim.
+        retenirInvitation(infos.invite_par, infos.projet);
         demanderProjet(infos.projet_id);
         if (autreSession) await nuage.auth.signOut({ scope: "local" });
         enInvitation = false;

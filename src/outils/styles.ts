@@ -6,6 +6,7 @@ import { bouton, cree, definirProjection, estOrtho, nombre, projectionModifiee, 
 import { effacerPerso, nombrePerso, persoModifiee } from "../apparence";
 import { enregistrerOutil, marquerOutil } from "./panneau";
 import { interrupteur, note, titreSection } from "./ui";
+import { definirTheme, themeActuel, themeModifie } from "../theme";
 
 const CLE = "nexbim-styles";
 const NOIR = "#111418";
@@ -68,7 +69,7 @@ const SVG_CUBE = (aretes: boolean, ombres: boolean) => `<svg viewBox="0 0 32 32"
 <path d="M27 10 16 16V28L27 22Z" fill="${ombres ? "#5d6672" : "#aab1bb"}"/>
 ${aretes ? '<path d="M16 4 27 10V22L16 28 5 22V10ZM5 10 16 16 27 10M16 16V28" fill="none" stroke="#0b0d10" stroke-width="1.6" stroke-linejoin="round"/>' : ""}</svg>`;
 const SVG_REGLAGES = `<svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-<path d="M6 10h20M6 16h20M6 22h20"/><circle cx="12" cy="10" r="2.6" fill="#161b22"/><circle cx="21" cy="16" r="2.6" fill="#161b22"/><circle cx="10" cy="22" r="2.6" fill="#161b22"/></svg>`;
+<path d="M6 10h20M6 16h20M6 22h20"/><circle cx="12" cy="10" r="2.6" style="fill:var(--panneau-plein)"/><circle cx="21" cy="16" r="2.6" style="fill:var(--panneau-plein)"/><circle cx="10" cy="22" r="2.6" style="fill:var(--panneau-plein)"/></svg>`;
 
 enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
   // --- Les styles tout faits
@@ -103,6 +104,18 @@ enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
   };
   projectionModifiee.on(majVue);
   majVue();
+
+  // --- Thème : fond et interface sombres ou clairs (aussi dans le menu du compte)
+  const themes = cree("div", "segments");
+  const segSombre = bouton("segment", "Sombre", () => definirTheme("sombre"));
+  const segClair = bouton("segment", "Clair", () => definirTheme("clair"), "Fond clair et panneaux blancs");
+  themes.append(segSombre, segClair);
+  const majTheme = () => {
+    segSombre.classList.toggle("actif", themeActuel() === "sombre");
+    segClair.classList.toggle("actif", themeActuel() === "clair");
+  };
+  themeModifie.on(majTheme);
+  majTheme();
 
   // --- Réglages du style personnalisé
   const perso = cree("div", "styles-perso");
@@ -228,6 +241,8 @@ enregistrerOutil("styles", "Styles", "Styles d'affichage", (section) => {
     perso,
     titreSection("Vue"),
     vue,
+    titreSection("Thème"),
+    themes,
     blocProche,
     titreSection("Couleurs posées à la main"),
     persoEtat,

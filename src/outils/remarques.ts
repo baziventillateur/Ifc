@@ -23,6 +23,8 @@ import { demandeRemarque, type DemandeRemarque } from "../evenements";
 import { effacer, ecrire, lireTout } from "../stockage";
 import { enregistrerOutil, marquerOutil, ouvrirOutil } from "./panneau";
 import { note, puces } from "./ui";
+import { dessinerSurImage, etatActuel, restaurerEtat, type EtatVue } from "../etat-vue";
+import type { Annotations } from "../annoter";
 
 type Type = "Remarque" | "Clash" | "Question";
 type Statut = "Ouverte" | "Résolue";
@@ -40,6 +42,11 @@ export type Remarque = {
   /** Point de vue en coordonnées IFC (Z vers le haut). */
   vue: { position: Vec; direction: Vec; haut: Vec; distance?: number; fov: number } | null;
   vignette?: string;
+  /** Maquette au moment de la remarque (maquettes affichées, transparences, coupes, cotes…). */
+  etat?: EtatVue;
+  /** Vue sans annotations et annotations rééditables (éditeur). */
+  vignetteOrigine?: string;
+  annotations?: Annotations | null;
 };
 
 const remarques = new Map<string, Remarque>();
@@ -70,11 +77,14 @@ function vignette(): string | undefined {
     const rendu = monde.renderer!.three;
     rendu.render(monde.scene.three, monde.camera.three);
     const source = rendu.domElement;
-    const largeur = 480;
+    const largeur = 720;
     const c = cree("canvas");
     c.width = largeur;
     c.height = Math.round((source.height / source.width) * largeur);
-    c.getContext("2d")!.drawImage(source, 0, 0, c.width, c.height);
+    const g = c.getContext("2d")!;
+    g.drawImage(source, 0, 0, c.width, c.height);
+    // Les cotes affichées figurent aussi sur la vue enregistrée.
+    dessinerSurImage(g, c.width, c.height, c.width / (source.getBoundingClientRect().width || c.width));
     return c.toDataURL("image/png");
   } catch {
     return undefined;
@@ -94,6 +104,8 @@ async function guidsVersIds(elements: Remarque["elements"]): Promise<Ids> {
 }
 
 async function allerA(r: Remarque) {
+  // La maquette comme au moment de la remarque, puis ses éléments en jaune et la caméra.
+  if (r.etat) await restaurerEtat(r.etat);
   const ids = await guidsVersIds(r.elements);
   await definirCouche("remarque", STYLES.remarque, ids.size ? ids : null);
   if (r.vue) {
@@ -237,8 +249,15 @@ enregistrerOutil("remarques", "Remarques", "Remarques (BCF)", (section) => {
     auteur = "";
   }
   let filtre: "ouvertes" | "toutes" = "ouvertes";
-  let enCours: { demande: DemandeRemarque; vue: Remarque["vue"]; vignette?: string; guids: Remarque["elements"] } | null =
-    null;
+  let enCours: {
+    demande: DemandeRemarque;
+    vue: Remarque["vue"];
+    vignette?: string;
+    guids: Remarque["elements"];
+    etat?: EtatVue;
+    /** Remarque modifiée (sinon, nouvelle remarque). */
+    edition?: Remarque;
+  } | null = null;
   let ouverte: string | null = null;
 
   const ligneAuteur = cree("label", "rangee petit");
@@ -319,7 +338,7 @@ enregistrerOutil("remarques", "Remarques", "Remarques (BCF)", (section) => {
       const [g] = (await m?.modele.getGuidsByLocalIds([e.id])) ?? [];
       if (g) guids.push({ ifcGuid: g, modele: e.modele });
     }
-    enCours = { demande: d, vue: vueActuelle(), vignette: vignette(), guids };
+    enCours = { demande: d, vue: vueActuelle(), vignette: vignette(), guids, etat: etatActuel() };
     dessinerFormulaire();
   }
 
@@ -358,7 +377,8 @@ enregistrerOutil("remarques", "Remarques", "Remarques (BCF)", (section) => {
           : "Vue enregistrée",
       ),
     );
-    const enregistrer = cree("button", "btn principal", "Enregistrer");
+    if (enCours.edition) apercu.querySelector("span")!.textContent = "Vue et éléments inchangés";
+    const enregistrer = cree("button", "btn principal", enCours.edition ? "Enregistrer les modifications" : "Enregistrer");
     enregistrer.type = "submit";
     const actions = cree("div", "rangee");
     actions.append(
@@ -372,6 +392,17 @@ enregistrerOutil("remarques", "Remarques", "Remarques (BCF)", (section) => {
     formulaire.onsubmit = async (e) => {
       e.preventDefault();
       if (!enCours || !titre.value.trim()) return;
+      const modifiee = enCours.edition;
+      if (modifiee) {
+        modifiee.titre = titre.value.trim();
+        modifiee.description = desc.value.trim();
+        modifiee.type = type;
+        await ecrire("remarques", modifiee.guid, modifiee);
+        enCours = null;
+        dessinerFormulaire();
+        dessiner();
+        return;
+      }
       const r: Remarque = {
         guid: guid(),
         titre: titre.value.trim(),
@@ -383,6 +414,7 @@ enregistrerOutil("remarques", "Remarques", "Remarques (BCF)", (section) => {
         elements: enCours.guids,
         vue: enCours.vue,
         vignette: enCours.vignette,
+        etat: enCours.etat,
       };
       remarques.set(r.guid, r);
       await ecrire("remarques", r.guid, r);
@@ -435,7 +467,38 @@ enregistrerOutil("remarques", "Remarques", "Remarques (BCF)", (section) => {
               await ecrire("remarques", r.guid, r);
               dessiner();
             }),
-            bouton("puce", "Revoir la vue", () => void allerA(r)),
+            bouton("puce", "Revoir la vue", () => void allerA(r), "Caméra, maquettes affichées, transparences, coupes et cotes comme au moment de la remarque"),
+            bouton("puce", "Modifier", () => {
+              enCours = {
+                demande: { elements: [], titre: r.titre, description: r.description, type: r.type },
+                vue: r.vue,
+                vignette: r.vignette,
+                guids: r.elements,
+                edition: r,
+              };
+              dessinerFormulaire();
+            }),
+            ...(r.vignette
+              ? [
+                  bouton("puce", "Annoter la vue", async () => {
+                    const source = r.vignetteOrigine ?? r.vignette!;
+                    let res: Awaited<ReturnType<typeof import("../annoter").annoterImage>>;
+                    try {
+                      const { annoterImage } = await import("../annoter");
+                      res = await annoterImage(source, r.annotations);
+                    } catch (e) {
+                      console.error("Annotation", e);
+                      return alerte("L'éditeur d'annotation n'a pas pu s'ouvrir. Vérifiez la connexion et réessayez.");
+                    }
+                    if (!res) return;
+                    if (!r.vignetteOrigine && res.annotations) r.vignetteOrigine = r.vignette;
+                    r.annotations = res.annotations;
+                    r.vignette = res.image.toDataURL("image/png");
+                    await ecrire("remarques", r.guid, r);
+                    dessiner();
+                  }, "Flèches, texte, cadres… sur l'image de la remarque"),
+                ]
+              : []),
             bouton("puce danger", "Supprimer", async () => {
               const oui = await demanderConfirmation(
                 "Supprimer la remarque ?",

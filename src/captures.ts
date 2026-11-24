@@ -51,6 +51,8 @@ import {
   type DossierPace,
 } from "./paceapp";
 import { quitterVisite, suspendreVisite, visiteActive } from "./visite";
+import { dessinerSurImage, etatActuel, restaurerEtat, type EtatVue } from "./etat-vue";
+import type { Annotations } from "./annoter";
 
 type Statut = "a_traiter" | "traite";
 /** Point de vue ; pour une photo, f35 = focale équivalente 24×36 (angle de prise de vue). */
@@ -69,6 +71,13 @@ type Capture = {
   hauteur: number;
   /** Sur cet écran seulement (maquette d'essai, ou envoi en échec). */
   locale?: boolean;
+  /**
+   * État de la maquette à la prise (maquettes affichées, transparences, masquage, coupes,
+   * cotes…), lu à la demande : undefined = pas encore lu, null = aucun (ancienne capture).
+   */
+  etat?: EtatVue | null;
+  /** Annotations rééditables (éditeur), lues à la demande comme l'état. */
+  annotations?: Annotations | null;
 };
 
 const IMAGE_MAX = 1600; // px, côté le plus long
@@ -83,7 +92,8 @@ let captures: Capture[] = [];
 const images = new Map<string, string>();
 const vignettes = new Map<string, string>();
 
-const chemin = (id: string, vignette = false) => `${projet}/${id}${vignette ? "_v" : ""}.jpg`;
+/** Fichiers d'une capture : image (annotée), vignette « v », image d'origine sans annotations « o ». */
+const chemin = (id: string, variante: "" | "v" | "o" = "") => `${projet}/${id}${variante ? "_" + variante : ""}.jpg`;
 const libelleStatut = (s: Statut) => (s === "traite" ? "Traité" : "À traiter");
 
 // --- Prise de vue ------------------------------------------------------------------------
@@ -109,6 +119,8 @@ function reduire(source: CanvasImageSource & { width: number; height: number }, 
 
 async function capturer() {
   const toile = monde.renderer!.three.domElement;
+  // État de la maquette à cet instant : « Voir dans la maquette » le remettra à l'identique.
+  const etat = etatActuel();
   // On redessine la vue et on la copie aussitôt (le dessin WebGL n'est pas gardé ensuite).
   // Sans les effets de visite (flou des bords, balancement) : l'image doit être fidèle.
   suspendreEffets(true);
@@ -119,6 +131,9 @@ async function capturer() {
   } finally {
     suspendreEffets(false);
   }
+  // Les cotes (dessinées par-dessus la 3D à l'écran) sont reportées dans l'image.
+  const largeurEcran = toile.getBoundingClientRect().width || grande.width;
+  dessinerSurImage(grande.getContext("2d")!, grande.width, grande.height, grande.width / largeurEcran);
   flash();
   const [image, petite] = await Promise.all([versBlob(grande, 0.86), versBlob(reduire(grande, VIGNETTE), 0.8)]);
   const cap: Capture = {
@@ -132,6 +147,8 @@ async function capturer() {
     largeur: grande.width,
     hauteur: grande.height,
     locale: !projet,
+    etat,
+    annotations: null,
   };
   images.set(cap.id, URL.createObjectURL(image));
   vignettes.set(cap.id, URL.createObjectURL(petite));
@@ -146,7 +163,7 @@ async function envoyer(cap: Capture, image: Blob, petite: Blob) {
   const st = nuage.storage.from(SEAU);
   const [a, b] = await Promise.all([
     st.upload(chemin(cap.id), image, { contentType: "image/jpeg", upsert: true }),
-    st.upload(chemin(cap.id, true), petite, { contentType: "image/jpeg", upsert: true }),
+    st.upload(chemin(cap.id, "v"), petite, { contentType: "image/jpeg", upsert: true }),
   ]);
   let erreur: unknown = a.error ?? b.error;
   if (!erreur) {
@@ -158,6 +175,7 @@ async function envoyer(cap: Capture, image: Blob, petite: Blob) {
       vue: cap.vue,
       largeur: cap.largeur,
       hauteur: cap.hauteur,
+      etat: cap.etat ?? null,
     });
     erreur = error;
   }
@@ -396,6 +414,8 @@ function ouvrirGalerie(id?: string, focus?: "message") {
 }
 
 function fermerGalerie() {
+  viderMessage();
+  naviguer = null;
   fond?.remove();
   fond = boite = null;
   detail = null;
@@ -407,13 +427,25 @@ function fermerGalerie() {
 }
 
 window.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !fond) return;
+  if (!fond) return;
+  // Visionneuse : flèches du clavier pour passer d'une capture à l'autre.
+  const sens = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+  if (sens && detail && naviguer && !exportPace && !choix) {
+    const cible = e.target as HTMLElement | null;
+    if (cible?.closest("input, textarea, select, [contenteditable]")) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    naviguer(sens);
+    return;
+  }
+  if (e.key !== "Escape") return;
   if (exportPace) {
     if (exportPace.etape !== "envoi") quitterExport(exportPace.etape !== "fin");
   } else if (choix) {
     choix = null;
     majGalerie();
   } else if (detail) {
+    viderMessage();
     detail = null;
     majGalerie();
   } else fermerGalerie();
@@ -422,10 +454,15 @@ window.addEventListener("keydown", (e) => {
 function majGalerie(focus?: "message") {
   majCoin();
   if (!boite) return;
-  if (exportPace) return dessinerExport();
+  if (exportPace) {
+    boite.classList.remove("visionneuse");
+    return dessinerExport();
+  }
   const cap = detail ? captures.find((c) => c.id === detail) : undefined;
+  boite.classList.toggle("visionneuse", !!cap);
   if (detail && cap) return dessinerDetail(cap, focus);
   detail = null;
+  naviguer = null;
   const entete = cree("div", "captures-entete");
   const aTraiter = captures.filter((c) => c.statut === "a_traiter").length;
   const liste = capturesFiltrees();
@@ -840,26 +877,147 @@ async function imageDe(c: Capture) {
   return url;
 }
 
+/** Images d'origine (sans annotations), pour reprendre les annotations dans l'éditeur. */
+const originaux = new Map<string, string>();
+
+async function originalDe(c: Capture) {
+  if (!c.annotations) return imageDe(c);
+  const url = originaux.get(c.id);
+  if (url || c.locale || !projet) return url ?? imageDe(c);
+  const { data } = await nuage.storage.from(SEAU).download(chemin(c.id, "o"));
+  if (!data) return imageDe(c);
+  const u = URL.createObjectURL(data);
+  originaux.set(c.id, u);
+  return u;
+}
+
+/** Lit à la demande l'état et / ou les annotations d'une capture (absents de la liste). */
+async function completer(c: Capture, ...champs: ("etat" | "annotations")[]) {
+  const manquants = champs.filter((k) => c[k] === undefined);
+  if (!manquants.length) return true;
+  if (c.locale || !projet) {
+    for (const k of manquants) c[k] = null;
+    return true;
+  }
+  const { data, error } = await nuage.from("captures").select(manquants.join(", ")).eq("id", c.id).maybeSingle();
+  if (error) {
+    console.error("Capture", error);
+    return false;
+  }
+  const ligne = (data ?? {}) as Partial<Record<"etat" | "annotations", unknown>>;
+  if (manquants.includes("etat")) c.etat = (ligne.etat as EtatVue | null) ?? null;
+  if (manquants.includes("annotations")) c.annotations = (ligne.annotations as Annotations | null) ?? null;
+  return true;
+}
+
+// --- Visionneuse : une capture en grand, et on passe à la suivante sans fermer ----------------
+
+/** Message en cours de saisie dans la visionneuse : enregistré avant de changer de capture. */
+let messageEnAttente: (() => Promise<void>) | null = null;
+/** Capture précédente (-1) ou suivante (+1), depuis le clavier. */
+let naviguer: ((sens: number) => void) | null = null;
+
+function viderMessage() {
+  const f = messageEnAttente;
+  messageEnAttente = null;
+  if (f) void f();
+}
+
 function dessinerDetail(c: Capture, focus?: "message") {
   if (!boite) return;
+  let liste = capturesFiltrees();
+  if (!liste.includes(c)) liste = captures;
+  const rang = liste.indexOf(c);
+  const aller = (sens: number) => {
+    if (liste.length < 2) return;
+    const suivante = liste[(rang + sens + liste.length) % liste.length];
+    viderMessage();
+    detail = suivante.id;
+    majGalerie();
+    boite?.querySelector<HTMLElement>(".capture-vignette.actuelle")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
+  naviguer = aller;
+
   const entete = cree("div", "captures-entete");
   entete.append(
     bouton("visite-puce", "‹ Captures", () => {
+      viderMessage();
       detail = null;
       majGalerie();
     }),
     cree("span", "capture-carte-date", `${dateCourte(c.cree_le)} ${new Date(c.cree_le).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}${c.auteur_nom ? " · " + c.auteur_nom : ""}`),
+    cree("span", "capture-rang", liste.length > 1 ? `${rang + 1} / ${liste.length}` : ""),
     bouton("fermer", "✕", fermerGalerie, "Fermer"),
   );
+
+  // Image en grand, flèches de part et d'autre ; glisser du doigt pour changer de capture.
+  const scene = cree("div", "capture-scene");
   const img = cree("img", "capture-grande");
-  img.alt = "Capture";
+  img.alt = c.genre === "photo" ? "Photo du chantier" : "Capture";
   img.src = vignettes.get(c.id) ?? "";
-  void imageDe(c).then((u) => u && (img.src = u));
-  img.addEventListener("click", () => void (c.genre === "photo" ? voirPhoto(c) : annoter(c)));
+  img.title = c.genre === "photo" ? "Voir la photo au point de vue" : "Annoter la capture";
+  img.draggable = false;
+  void imageDe(c).then((u) => u && detail === c.id && (img.src = u));
+  let glisse: { x: number; y: number; id: number } | null = null;
+  let aGlisse = false;
+  img.addEventListener("pointerdown", (e) => {
+    glisse = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    aGlisse = false;
+  });
+  img.addEventListener("pointerup", (e) => {
+    if (!glisse || glisse.id !== e.pointerId) return;
+    const dx = e.clientX - glisse.x;
+    const dy = e.clientY - glisse.y;
+    glisse = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      aGlisse = true;
+      aller(dx < 0 ? 1 : -1);
+    }
+  });
+  img.addEventListener("click", () => {
+    if (aGlisse) return;
+    void (c.genre === "photo" ? voirPhoto(c) : annoter(c));
+  });
+  scene.append(img);
+  if (c.genre === "photo") scene.append(cree("span", "capture-genre", "📷 Photo"));
+  if (liste.length > 1) {
+    const prec = bouton("capture-fleche gauche", "‹", () => aller(-1), "Capture précédente (←)");
+    const suiv = bouton("capture-fleche droite", "›", () => aller(1), "Capture suivante (→)");
+    prec.setAttribute("aria-label", "Capture précédente");
+    suiv.setAttribute("aria-label", "Capture suivante");
+    scene.append(prec, suiv);
+  }
+
+  // Bande des vignettes : un toucher ouvre la capture.
+  const bande = cree("div", "capture-bande");
+  bande.setAttribute("role", "listbox");
+  bande.setAttribute("aria-label", "Captures");
+  for (const x of liste) {
+    const b = cree("button", "capture-vignette" + (x === c ? " actuelle" : "") + (x.statut === "a_traiter" ? " a-traiter" : ""));
+    b.type = "button";
+    b.setAttribute("role", "option");
+    b.setAttribute("aria-selected", String(x === c));
+    b.title = `${dateCourte(x.cree_le)}${x.message ? " · " + x.message : ""}`;
+    const v = cree("img");
+    v.alt = "";
+    v.loading = "lazy";
+    const u = vignettes.get(x.id);
+    if (u) v.src = u;
+    b.append(v);
+    if (x.genre === "photo") b.append(cree("span", "capture-vignette-genre", "📷"));
+    b.addEventListener("click", () => {
+      if (x === c) return;
+      viderMessage();
+      detail = x.id;
+      majGalerie();
+    });
+    bande.append(b);
+  }
 
   const statut = bouton("capture-statut grand " + c.statut, (c.statut === "traite" ? "✓ " : "") + libelleStatut(c.statut), async () => {
     const avant = c.statut;
     c.statut = c.statut === "traite" ? "a_traiter" : "traite";
+    viderMessage();
     majGalerie();
     if (!(await enregistrer(c, { statut: c.statut }))) {
       c.statut = avant;
@@ -868,30 +1026,46 @@ function dessinerDetail(c: Capture, focus?: "message") {
   });
   statut.title = "Toucher pour changer le statut";
 
+  // Message : enregistré tout seul pendant la frappe (et en quittant la capture).
   const message = cree("textarea", "champ capture-message");
   message.rows = 3;
   message.maxLength = 2000;
   message.placeholder = "Votre message : ce qu'il faut voir, faire, corriger…";
   message.value = c.message;
-  const enregistrerMsg = bouton("btn principal", "Enregistrer le message", async () => {
+  const etatMessage = cree("span", "capture-message-etat", "");
+  let minuterie = 0;
+  const sauver = async () => {
+    window.clearTimeout(minuterie);
+    if (messageEnAttente === sauver) messageEnAttente = null;
     const texte = message.value.trim();
     if (texte === c.message) return;
     const avant = c.message;
     c.message = texte;
-    if (await enregistrer(c, { message: texte })) alerte("Message enregistré.", 1800);
-    else c.message = avant;
+    etatMessage.textContent = "Enregistrement…";
+    if (await enregistrer(c, { message: texte })) etatMessage.textContent = "✓ Enregistré";
+    else {
+      c.message = avant;
+      etatMessage.textContent = "Échec de l'enregistrement";
+    }
+  };
+  message.addEventListener("input", () => {
+    etatMessage.textContent = "";
+    messageEnAttente = sauver;
+    window.clearTimeout(minuterie);
+    minuterie = window.setTimeout(() => void sauver(), 900);
   });
-  enregistrerMsg.hidden = true;
-  message.addEventListener("input", () => (enregistrerMsg.hidden = message.value.trim() === c.message));
+  message.addEventListener("blur", () => void sauver());
+  const ligneMessage = cree("div", "capture-message-ligne");
+  ligneMessage.append(statut, etatMessage);
 
   const actions = cree("div", "capture-actions");
   actions.append(
-    bouton("visite-puce", "Annoter", () => void annoter(c)),
+    bouton("visite-puce", "✏️ Annoter", () => void annoter(c), "Flèches, texte, cadres, traits… (modifiables ensuite)"),
     bouton(
       "visite-puce",
       c.genre === "photo" ? "Voir au point de vue" : "Voir dans la maquette",
       () => void (c.genre === "photo" ? voirPhoto(c) : allerA(c)),
-      "Remettre la caméra à cet endroit",
+      "Remet la caméra et la maquette comme à la prise : maquettes affichées, transparences, éléments masqués, coupes et cotes",
     ),
     bouton("visite-puce", "Télécharger", async () => {
       const b = await blobDe(c);
@@ -899,11 +1073,18 @@ function dessinerDetail(c: Capture, focus?: "message") {
     }),
     bouton("visite-puce danger", "Supprimer", () => void supprimer(c)),
   );
-  boite.replaceChildren(entete, img, statut, message, enregistrerMsg, actions);
+
+  const infos = cree("div", "capture-infos");
+  infos.append(ligneMessage, message, actions);
+  const colonne = cree("div", "capture-colonne");
+  colonne.append(scene, infos);
+  const corps = cree("div", "capture-visionneuse" + (liste.length > 1 ? "" : " seule"));
+  corps.append(...(liste.length > 1 ? [bande] : []), colonne);
+  boite.replaceChildren(entete, corps);
   if (focus === "message") message.focus();
 }
 
-async function enregistrer(c: Capture, champs: Partial<Pick<Capture, "message" | "statut">>) {
+async function enregistrer(c: Capture, champs: Partial<Pick<Capture, "message" | "statut" | "annotations">>) {
   if (c.locale || !projet) return true;
   const { error } = await nuage
     .from("captures")
@@ -924,162 +1105,91 @@ async function supprimer(c: Capture) {
       console.error("Capture", error);
       return alerte("Suppression impossible : seuls l'auteur et le créateur du projet peuvent la supprimer.", 4500);
     }
-    void nuage.storage.from(SEAU).remove([chemin(c.id), chemin(c.id, true)]);
+    void nuage.storage.from(SEAU).remove([chemin(c.id), chemin(c.id, "v"), chemin(c.id, "o")]);
   }
+  // On reste dans la visionneuse : la capture suivante prend sa place.
+  const liste = capturesFiltrees();
+  const rang = liste.indexOf(c);
+  const suivante = liste[rang + 1] ?? liste[rang - 1];
   captures = captures.filter((x) => x !== c);
-  for (const m of [images, vignettes]) {
+  for (const m of [images, vignettes, originaux]) {
     const u = m.get(c.id);
     if (u?.startsWith("blob:")) URL.revokeObjectURL(u);
     m.delete(c.id);
   }
-  detail = null;
+  detail = suivante && suivante !== c ? suivante.id : null;
   majGalerie();
 }
 
+/** « Voir dans la maquette » : la caméra, et la maquette exactement comme à la prise. */
 async function allerA(c: Capture) {
   if (!c.vue) return;
+  viderMessage();
+  const lu = await completer(c, "etat");
   fermerGalerie();
   if (visiteActive()) await quitterVisite();
+  if (c.etat) await restaurerEtat(c.etat);
+  else if (lu) alerte("Capture ancienne : seule la caméra est remise (l'affichage n'était pas encore enregistré).", 3500);
   const v = c.vue;
   await definirProjection(v.ortho ? "Orthographic" : "Perspective");
   recentrerPivot();
   await monde.camera.controls.setLookAt(v.p[0], v.p[1], v.p[2], v.c[0], v.c[1], v.c[2], true);
 }
 
-// --- Annoter : dessiner au doigt sur la capture ---------------------------------------
-
-const COULEURS = ["#ff3b30", "#ffd60a", "#ffffff"];
+// --- Annoter : éditeur d'annotation (flèches, texte, cadres…), annotations modifiables -----
 
 async function annoter(c: Capture) {
-  const url = await imageDe(c);
-  if (!url) return;
-  const base = new Image();
-  base.src = url;
+  viderMessage();
+  if (!(await completer(c, "annotations"))) return alerte("Annotations illisibles : vérifiez la connexion.", 3500);
+  const avaitAnnotations = !!c.annotations;
+  const source = await originalDe(c);
+  if (!source) return alerte("Image indisponible.", 3000);
+  let r: Awaited<ReturnType<typeof import("./annoter").annoterImage>>;
   try {
-    await base.decode();
-  } catch {
-    return alerte("Image indisponible.", 3000);
+    const { annoterImage } = await import("./annoter");
+    r = await annoterImage(source, c.annotations);
+  } catch (e) {
+    console.error("Annotation", e);
+    return alerte("L'éditeur d'annotation n'a pas pu s'ouvrir. Vérifiez la connexion et réessayez.", 4500);
   }
-  type Trait = { couleur: string; largeur: number; points: [number, number][] };
-  const traits: Trait[] = [];
-  let couleur = COULEURS[0];
-
-  const ecran = cree("div", "annoter");
-  const barre = cree("div", "annoter-barre");
-  const zone = cree("div", "annoter-zone");
-  const toile = cree("canvas", "annoter-toile");
-  zone.append(toile);
-  const choix = cree("div", "annoter-couleurs");
-  const pastilles = COULEURS.map((col) => {
-    const b = bouton("annoter-couleur" + (col === couleur ? " actif" : ""), "", () => {
-      couleur = col;
-      for (const p of pastilles) p.classList.toggle("actif", p === b);
-    });
-    b.style.background = col;
-    b.setAttribute("aria-label", "Couleur");
-    return b;
-  });
-  choix.append(...pastilles);
-  const retour = bouton("visite-puce", "↶", () => {
-    traits.pop();
-    dessiner();
-  }, "Annuler le dernier trait");
-  const terminer = bouton("visite-puce actif", "Terminer", () => void finir(true));
-  barre.append(bouton("visite-puce", "Abandonner", () => void finir(false)), choix, retour, terminer);
-  ecran.append(zone, barre);
-  document.body.append(ecran);
-
-  // Toile à la taille de l'écran, image entière visible.
-  const ajuster = () => {
-    const r = zone.getBoundingClientRect();
-    const k = Math.min(r.width / base.width, r.height / base.height);
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    toile.style.width = `${Math.round(base.width * k)}px`;
-    toile.style.height = `${Math.round(base.height * k)}px`;
-    toile.width = Math.round(base.width * k * dpr);
-    toile.height = Math.round(base.height * k * dpr);
-    dessiner();
-  };
-  const ctx = toile.getContext("2d")!;
-  function tracer(c2: CanvasRenderingContext2D, w: number, h: number, t: Trait) {
-    if (!t.points.length) return;
-    c2.strokeStyle = t.couleur;
-    c2.lineWidth = t.largeur * w;
-    c2.lineCap = "round";
-    c2.lineJoin = "round";
-    c2.beginPath();
-    c2.moveTo(t.points[0][0] * w, t.points[0][1] * h);
-    for (const [x, y] of t.points.slice(1)) c2.lineTo(x * w, y * h);
-    if (t.points.length === 1) c2.lineTo(t.points[0][0] * w + 0.1, t.points[0][1] * h);
-    c2.stroke();
+  if (!r) return;
+  // L'image d'origine est gardée à part la première fois : les annotations restent modifiables.
+  let origine: Blob | null = null;
+  if (!avaitAnnotations && r.annotations) {
+    origine = await fetch(source).then((x) => x.blob()).catch(() => null);
+    if (origine && (c.locale || !projet)) originaux.set(c.id, URL.createObjectURL(origine));
   }
-  function dessiner() {
-    ctx.drawImage(base, 0, 0, toile.width, toile.height);
-    for (const t of traits) tracer(ctx, toile.width, toile.height, t);
-    retour.disabled = traits.length === 0;
+  const [image, petite] = await Promise.all([versBlob(r.image, 0.86), versBlob(reduire(r.image, VIGNETTE), 0.8)]);
+  for (const [m, b] of [[images, image], [vignettes, petite]] as const) {
+    const ancien = m.get(c.id);
+    if (ancien?.startsWith("blob:")) URL.revokeObjectURL(ancien);
+    m.set(c.id, URL.createObjectURL(b));
   }
-  ajuster();
-  window.addEventListener("resize", ajuster);
-
-  let enCours: Trait | null = null;
-  const point = (e: PointerEvent): [number, number] => {
-    const r = toile.getBoundingClientRect();
-    return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
-  };
-  toile.addEventListener("pointerdown", (e) => {
-    if (enCours) return;
-    toile.setPointerCapture(e.pointerId);
-    enCours = { couleur, largeur: 0.006, points: [point(e)] };
-    traits.push(enCours);
-    dessiner();
-  });
-  toile.addEventListener("pointermove", (e) => {
-    if (!enCours) return;
-    enCours.points.push(point(e));
-    dessiner();
-  });
-  const lacher = () => (enCours = null);
-  toile.addEventListener("pointerup", lacher);
-  toile.addEventListener("pointercancel", lacher);
-
-  async function finir(garder: boolean) {
-    window.removeEventListener("resize", ajuster);
-    ecran.remove();
-    if (!garder || !traits.length) return;
-    // Image finale à pleine définition.
-    const finale = cree("canvas");
-    finale.width = base.width;
-    finale.height = base.height;
-    const f = finale.getContext("2d")!;
-    f.drawImage(base, 0, 0);
-    for (const t of traits) tracer(f, finale.width, finale.height, t);
-    const [image, petite] = await Promise.all([versBlob(finale, 0.86), versBlob(reduire(finale, VIGNETTE), 0.8)]);
-    for (const [m, b] of [[images, image], [vignettes, petite]] as const) {
-      const ancien = m.get(c.id);
-      if (ancien?.startsWith("blob:")) URL.revokeObjectURL(ancien);
-      m.set(c.id, URL.createObjectURL(b));
-    }
-    majGalerie();
-    if (c.locale || !projet) return;
-    const st = nuage.storage.from(SEAU);
-    const [a, b] = await Promise.all([
-      st.upload(chemin(c.id), image, { contentType: "image/jpeg", upsert: true }),
-      st.upload(chemin(c.id, true), petite, { contentType: "image/jpeg", upsert: true }),
-    ]);
-    if (a.error || b.error) {
-      console.error("Annotation", a.error ?? b.error);
-      return alerte("L'annotation n'a pas pu être enregistrée dans le projet.", 4500);
-    }
-    await enregistrer(c, {});
-    alerte("Annotation enregistrée.", 1800);
+  c.annotations = r.annotations;
+  majGalerie();
+  if (c.locale || !projet) return alerte("Annotation enregistrée.", 1800);
+  const st = nuage.storage.from(SEAU);
+  if (origine) {
+    const { error } = await st.upload(chemin(c.id, "o"), origine, { contentType: "image/jpeg", upsert: true });
+    if (error) console.error("Image d'origine", error);
+    else originaux.set(c.id, URL.createObjectURL(origine));
   }
+  const [a, b] = await Promise.all([
+    st.upload(chemin(c.id), image, { contentType: "image/jpeg", upsert: true }),
+    st.upload(chemin(c.id, "v"), petite, { contentType: "image/jpeg", upsert: true }),
+  ]);
+  if (a.error || b.error) {
+    console.error("Annotation", a.error ?? b.error);
+    return alerte("L'annotation n'a pas pu être enregistrée dans le projet.", 4500);
+  }
+  if (await enregistrer(c, { annotations: c.annotations })) alerte("Annotation enregistrée.", 1800);
 }
 
 // --- Chargement avec le projet -------------------------------------------------------------
 
 projetCharge.on((id) => void charger(id));
 async function charger(id: string | null) {
-  for (const m of [images, vignettes]) {
+  for (const m of [images, vignettes, originaux]) {
     for (const u of m.values()) if (u.startsWith("blob:")) URL.revokeObjectURL(u);
     m.clear();
   }
@@ -1099,7 +1209,7 @@ async function charger(id: string | null) {
     if (captures.length) {
       const { data: urls } = await nuage.storage
         .from(SEAU)
-        .createSignedUrls(captures.map((c) => chemin(c.id, true)), 6 * 3600);
+        .createSignedUrls(captures.map((c) => chemin(c.id, "v")), 6 * 3600);
       if (projet !== id) return;
       urls?.forEach((u, i) => u.signedUrl && vignettes.set(captures[i].id, u.signedUrl));
     }
@@ -1197,6 +1307,7 @@ export async function prendrePhoto() {
     if (!flux) return;
     // Le point de vue est celui du déclenchement (au gyroscope, la vue suit le téléphone).
     const vue = vueActuelle();
+    const etat = etatActuel();
     declencheur.disabled = true;
     ecran.classList.add("eclair");
     jouerBruitage("photo");
@@ -1221,7 +1332,7 @@ export async function prendrePhoto() {
     }
     fermer();
     if (!photo) return alerte("La photo n'a pas pu être prise.", 3500);
-    await rangerPhoto(photo, vue).catch((e) => {
+    await rangerPhoto(photo, vue, etat).catch((e) => {
       console.error("Photo", e);
       alerte("La photo n'a pas pu être enregistrée.", 3500);
     });
@@ -1232,6 +1343,7 @@ export async function prendrePhoto() {
 let champPhoto: HTMLInputElement | null = null;
 function photoParFichier() {
   const vue = vueActuelle();
+  const etat = etatActuel();
   if (!champPhoto) {
     champPhoto = cree("input");
     champPhoto.type = "file";
@@ -1245,7 +1357,7 @@ function photoParFichier() {
   champ.onchange = () => {
     const f = champ.files?.[0];
     champ.value = "";
-    if (f) void rangerPhoto(f, vue).catch((e) => {
+    if (f) void rangerPhoto(f, vue, etat).catch((e) => {
       console.error("Photo", e);
       alerte("La photo n'a pas pu être lue.", 3500);
     });
@@ -1253,7 +1365,7 @@ function photoParFichier() {
   champ.click();
 }
 
-async function rangerPhoto(fichier: Blob, vue: Vue) {
+async function rangerPhoto(fichier: Blob, vue: Vue, etat: EtatVue) {
   const exif = focale35(await fichier.slice(0, 256 * 1024).arrayBuffer());
   // L'orientation EXIF est appliquée au décodage (photo prise en portrait ou en paysage).
   const bitmap = await createImageBitmap(fichier, { imageOrientation: "from-image" } as ImageBitmapOptions);
@@ -1274,6 +1386,8 @@ async function rangerPhoto(fichier: Blob, vue: Vue) {
     largeur: grande.width,
     hauteur: grande.height,
     locale: !projet,
+    etat,
+    annotations: null,
   };
   images.set(cap.id, URL.createObjectURL(image));
   vignettes.set(cap.id, URL.createObjectURL(petite));
@@ -1530,8 +1644,10 @@ let photoOuverte = false;
 
 async function voirPhoto(c: Capture) {
   if (!c.vue || photoOuverte) return;
-  fermerGalerie();
+  viderMessage();
   photoOuverte = true;
+  await completer(c, "etat");
+  fermerGalerie();
   const ctl = monde.camera.controls;
   const persp = monde.camera.threePersp;
   const avant = {
@@ -1548,6 +1664,10 @@ async function voirPhoto(c: Capture) {
   suspendreEffets(true);
   bloquerDecalage(true);
   if (avant.ortho) await definirProjection("Perspective");
+  // La maquette comme à la prise de la photo (maquettes affichées, transparences…) ;
+  // l'affichage d'avant revient à la fermeture, avec la caméra.
+  const etatAvant = c.etat ? etatActuel() : null;
+  if (c.etat) await restaurerEtat(c.etat);
 
   const ecran = cree("div", "photo-vue");
   const img = cree("img", "photo-vue-img");
@@ -1717,6 +1837,7 @@ async function voirPhoto(c: Capture) {
     suspendreEffets(false);
     persp.fov = avant.fov;
     persp.updateProjectionMatrix();
+    if (etatAvant) await restaurerEtat(etatAvant);
     if (enVisite && visiteActive()) {
       // En visite, on reste au point de vue de la photo et la marche reprend de là.
       ctl.update(0);

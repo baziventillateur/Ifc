@@ -10,6 +10,7 @@ import { definirModeClic } from "../fiche";
 import { changement, visibles } from "../registre";
 import { solsDesNiveaux } from "../niveaux";
 import { enregistrerOutil, marquerOutil } from "./panneau";
+import { enregistrerEtat } from "../etat-vue";
 import { curseur, interrupteur, note, puces, titreSection } from "./ui";
 
 const planH = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
@@ -262,6 +263,42 @@ function armerCiseaux() {
   definirModeClic(outilOuvert && (!face.actif || aRemplacer) ? choisirFace : null, CURSEUR_CISEAUX);
 }
 
+// --- État des coupes (enregistré avec une capture, remis par « Voir dans la maquette ») ----
+
+export type EtatCoupes = {
+  h: { actif: boolean; y: number };
+  v: { actif: boolean; axe: "x" | "y"; pos: number; inverse: boolean };
+  f: { actif: boolean; o: number[]; n: number[]; d: number };
+};
+
+export function etatCoupes(): EtatCoupes {
+  return {
+    h: { ...etat.h },
+    v: { ...etat.v },
+    f: { actif: face.actif, o: face.origine.toArray(), n: face.normale.toArray(), d: face.decalage },
+  };
+}
+
+/** Panneau Coupe : remet ses interrupteurs d'accord avec l'état (s'il est construit). */
+let majPanneauCoupe: () => void = () => {};
+
+export async function appliquerEtatCoupes(e: EtatCoupes) {
+  Object.assign(etat.h, e.h);
+  Object.assign(etat.v, e.v);
+  face.actif = !!e.f?.actif;
+  if (e.f?.o?.length === 3) face.origine.fromArray(e.f.o);
+  if (e.f?.n?.length === 3) face.normale.fromArray(e.f.n).normalize();
+  face.decalage = Number(e.f?.d) || 0;
+  aRemplacer = false;
+  fermerMenuCoupe();
+  armerCiseaux();
+  majPanneauCoupe();
+  majFace();
+  await appliquer();
+}
+
+enregistrerEtat("coupes", etatCoupes, appliquerEtatCoupes, 2);
+
 export function retirerCoupes() {
   etat.h.actif = false;
   etat.v.actif = false;
@@ -419,6 +456,13 @@ enregistrerOutil("coupe", "Coupe", "Plans de coupe", (section) => {
       );
     }
   }
+
+  majPanneauCoupe = () => {
+    h.input.checked = etat.h.actif;
+    v.input.checked = etat.v.actif;
+    axes.choisir(etat.v.axe);
+    if (!section.hidden) regler();
+  };
 
   changement.on(() => {
     if (!section.hidden) {

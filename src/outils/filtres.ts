@@ -13,6 +13,7 @@ import {
 import { fermerFiche } from "../fiche";
 import { libelleCategorie } from "../libelles";
 import { enregistrerOutil, marquerOutil } from "./panneau";
+import { enregistrerEtat } from "../etat-vue";
 import { note, titreSection } from "./ui";
 
 const masquesNiveaux = new Set<string>();
@@ -30,6 +31,24 @@ async function appliquer() {
   }
   await definirFiltre(masques);
   marquerOutil("filtres", filtreActif());
+}
+
+// --- État des filtres (enregistré avec une capture) ------------------------------------
+
+export type EtatFiltres = { niveaux: string[]; types: string[] };
+export const etatFiltres = (): EtatFiltres => ({ niveaux: [...masquesNiveaux], types: [...masquesTypes] });
+let redessinerFiltres: () => void = () => {};
+enregistrerEtat("filtres", () => etatFiltres(), (e: EtatFiltres) => appliquerEtatFiltres(e), 1);
+
+export async function appliquerEtatFiltres(e: EtatFiltres | null | undefined) {
+  const avant = JSON.stringify(etatFiltres());
+  masquesNiveaux.clear();
+  masquesTypes.clear();
+  for (const x of e?.niveaux ?? []) masquesNiveaux.add(x);
+  for (const x of e?.types ?? []) masquesTypes.add(x);
+  if (JSON.stringify(etatFiltres()) === avant) return;
+  redessinerFiltres();
+  await appliquer();
 }
 
 enregistrerOutil("filtres", "Filtres", "Filtrer par niveau et par type", (section) => {
@@ -181,6 +200,10 @@ enregistrerOutil("filtres", "Filtres", "Filtrer par niveau et par type", (sectio
       etat.textContent += " Ces maquettes ne déclarent pas de niveaux.";
     }
   }
+
+  redessinerFiltres = () => {
+    if (!section.hidden) void dessiner();
+  };
 
   changement.on(() => {
     if (!section.hidden) void dessiner();

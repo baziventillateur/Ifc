@@ -17,6 +17,7 @@ import {
   type Maquette,
 } from "./registre";
 import { enRejeu, noter } from "./historique";
+import { depuisPlages, enregistrerEtat, plages } from "./etat-vue";
 import {
   apresApercu,
   boiteFusion,
@@ -77,6 +78,15 @@ monde.renderer!.onBeforeUpdate.add(() => {
   aretes.visible = [...selection.keys()].some((mid) => maquettes.get(mid)?.modele.object.visible);
 });
 let tourAretes = 0;
+let neon = NEON;
+
+/** Couleur des arêtes de sélection (jaune néon sur fond sombre, plus soutenue sur fond clair). */
+export function couleurSelection(hex: number) {
+  neon = hex;
+  traitVu.color.setHex(hex);
+  traitCache.color.setHex(hex);
+  if (contour) contour.color = new THREE.Color(hex);
+}
 
 function viderAretes() {
   for (const o of [...aretes.children]) {
@@ -159,7 +169,7 @@ async function majContour() {
   if (!contour) {
     contour = composants.get(OBF.Outliner);
     contour.world = monde;
-    contour.color = new THREE.Color("#e8ff1a");
+    contour.color = new THREE.Color(neon);
     contour.thickness = 2;
     contour.fillColor = new THREE.Color("#f0ff3d");
     contour.fillOpacity = 0.12;
@@ -449,7 +459,7 @@ function idsAvecGeometrie(m: Maquette) {
 
 /** Affichage d'une maquette entière : visible, transparente, opacité. */
 type VueMaquette = [string, boolean, boolean, number];
-type Instantane = {
+export type Instantane = {
   perso: string;
   masques: [string, number[]][];
   isolement: [string, number[]][] | null;
@@ -504,6 +514,61 @@ function avecHistorique<T>(libelle: string, changement: () => T, cle?: string): 
     noter({ libelle, cle, annuler: () => restaurer(avant), refaire: () => restaurer(apres) });
   }
   return resultat;
+}
+
+// Gardé avec chaque capture : listes d'éléments en plages (« 3-40,52 »), voir etat-vue.
+type AffichageGarde = Omit<Instantane, "masques" | "isolement"> & {
+  masques: [string, string][];
+  isolement: [string, string][] | null;
+};
+enregistrerEtat<AffichageGarde>(
+  "affichage",
+  () => {
+    const i = instantane();
+    return {
+      ...i,
+      masques: i.masques.map(([k, l]) => [k, plages(l)]),
+      isolement: i.isolement ? i.isolement.map(([k, l]) => [k, plages(l)]) : null,
+    };
+  },
+  (g) =>
+    restaurerAffichage({
+      ...g,
+      vues: g.vues ?? [],
+      perso: g.perso ?? "{}",
+      masques: (g.masques ?? []).map(([k, t]) => [k, depuisPlages(t)]),
+      isolement: g.isolement ? g.isolement.map(([k, t]) => [k, depuisPlages(t)]) : null,
+    }),
+  0,
+);
+
+/** Affichage actuel : maquettes (visible, transparence), éléments masqués, isolés, recolorés. */
+export const instantaneAffichage = (): Instantane => instantane();
+
+/**
+ * Remet un affichage enregistré (vue d'une capture). Les maquettes absentes de l'état
+ * gardent le leur. S'annule avec Ctrl+Z comme les autres changements d'affichage.
+ */
+export function restaurerAffichage(e: Instantane) {
+  // Seules les maquettes chargées comptent (une maquette remplacée depuis a d'autres éléments).
+  const connue = ([mid]: [string, unknown]) => maquettes.has(mid);
+  const isolement = e.isolement ? e.isolement.filter(connue) : null;
+  let perso = "{}";
+  try {
+    const p = JSON.parse(e.perso || "{}") as Record<string, unknown>;
+    perso = JSON.stringify(Object.fromEntries(Object.entries(p).filter(([mid]) => maquettes.has(mid))));
+  } catch {
+    // Couleurs illisibles : aucune.
+  }
+  const complet: Instantane = {
+    ...e,
+    perso,
+    masques: e.masques.filter(connue),
+    isolement: isolement && (isolement.length || !e.isolement?.length) ? isolement : null,
+    couleurs: e.couleurs ?? etatCouleurs(),
+    vues: [...maquettes.values()].map((m) => e.vues.find((v) => v[0] === m.id) ?? [m.id, m.modele.object.visible, m.transparente, m.opacite]),
+  };
+  return avecHistorique("vue enregistrée", () => restaurer(complet), undefined);
 }
 
 export function definirFiltre(masques: Ids) {

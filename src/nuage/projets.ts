@@ -1,4 +1,5 @@
 // Projet dans le cloud : maquettes déposées, personnes invitées, compte, panneau admin.
+import { basculerTheme, themeActuel } from "../theme";
 import {
   deplacementsModifies,
   exporter as exporterDeplacements,
@@ -1304,6 +1305,8 @@ const SVG = (d: string) =>
   `<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const ICONES_MENU = {
   decouvrir: SVG('<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/>'),
+  clair: SVG('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/>'),
+  sombre: SVG('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>'),
   installer: SVG('<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M12 7v7M9 11l3 3 3-3"/>'),
   notifications: SVG('<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16Z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>'),
   admin: SVG('<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.3 7.5 9.5 4.3-1.2 7.5-4.9 7.5-9.5V6L12 3Z"/>'),
@@ -1371,6 +1374,12 @@ function ouvrirMenuCompte() {
   item("", ICONES_MENU.decouvrir, "Découvrir NexBim", ouvrirAccueil);
   if (!appliInstallee()) item("", ICONES_MENU.installer, "Installer l'appli", () => void installer());
   item("", ICONES_MENU.notifications, "Notifications", ouvrirNotifications);
+  item(
+    "",
+    themeActuel() === "clair" ? ICONES_MENU.sombre : ICONES_MENU.clair,
+    themeActuel() === "clair" ? "Thème sombre" : "Thème clair",
+    basculerTheme,
+  );
   item("", ICONES_MENU.versions, "Versions et mises à jour", () => ouvrirVersions());
   item(
     "",

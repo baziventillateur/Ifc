@@ -12,6 +12,7 @@ import * as OBC from "@thatopen/components";
 import { alerte, bouton, boutonIcone, composants, cree, el, lanceur, monde, nombre } from "../noyau";
 import { definirModeClic } from "../fiche";
 import { enregistrerOutil, marquerOutil } from "./panneau";
+import { enregistrerDessin, enregistrerEtat } from "../etat-vue";
 import { interrupteur, note } from "./ui";
 
 type Point = { point: THREE.Vector3; classe: FRAGS.SnappingClass; p1?: THREE.Vector3; p2?: THREE.Vector3 };
@@ -65,7 +66,7 @@ const svg = <K extends keyof SVGElementTagNameMap>(nom: K, classe: string) => {
 
 const mesures: Mesure[] = [];
 let actif = false;
-let liste: HTMLElement;
+let liste: HTMLElement | undefined;
 let actions: HTMLElement | null = null;
 
 // --- Projection et dessin -----------------------------------------------------------
@@ -472,6 +473,183 @@ window.addEventListener(
   true,
 );
 
+// --- État des cotes (enregistré avec une capture) et dessin dans une image ---------------
+
+type V3 = [number, number, number];
+export type EtatCote =
+  | { t: "d"; a: V3; b: V3; axe: Axe; v: number; f1: V3; f2: V3 }
+  | { t: "s"; p: V3[]; aire: number; per: number };
+
+const v3 = (p: THREE.Vector3): V3 => [p.x, p.y, p.z];
+const vec = (a: number[]) => new THREE.Vector3(a[0], a[1], a[2]);
+
+export function etatCotes(): EtatCote[] {
+  return mesures.map((m) =>
+    m.type === "distance"
+      ? { t: "d", a: v3(m.a), b: v3(m.b), axe: m.axe, v: m.valeur, f1: v3(m.f1), f2: v3(m.f2) }
+      : { t: "s", p: m.points.map(v3), aire: m.aire, per: m.perimetre },
+  );
+}
+
+/** Remplace les cotes affichées par celles données (vue d'une capture). */
+export function remplacerCotes(liste: EtatCote[]) {
+  oublierSaisie();
+  for (const m of [...mesures]) {
+    m.trace.remove();
+    m.etiquette.remove();
+  }
+  mesures.length = 0;
+  for (const c of liste ?? []) {
+    if (c.t === "d") {
+      const calcul: Calcul = { a: vec(c.a), b: vec(c.b), axe: c.axe, valeur: c.v, f1: vec(c.f1), f2: vec(c.f2) };
+      const etiquette = cree("div", "cote", texteDistance(calcul));
+      calque.append(etiquette);
+      const m: Distance = { type: "distance", ...calcul, trace: nouveauTraceDistance(), etiquette };
+      mesures.push(m);
+      tracerDistance(m.trace, m.etiquette, m);
+    } else if (c.t === "s" && c.p?.length >= 3) {
+      const points = c.p.map(vec);
+      const etiquette = cree("div", "cote surface", texteSurface(c.aire));
+      calque.append(etiquette);
+      const m: Surface = { type: "surface", points, aire: c.aire, perimetre: c.per, trace: nouveauTraceSurface(), etiquette };
+      mesures.push(m);
+      tracerSurface(m.trace, m.etiquette, points, true);
+    }
+  }
+  dessinerListe();
+}
+
+enregistrerEtat("cotes", etatCotes, remplacerCotes, 3);
+enregistrerDessin((g, l, h, k) => dessinerCotes(g, l, h, k));
+
+/** Projection d'un point de la scène dans une image de largeur l × hauteur h (vue actuelle). */
+function versImage(p: THREE.Vector3, l: number, h: number): P2 | null {
+  const v = p.clone().project(monde.camera.three);
+  if (v.z > 1 || v.z < -1) return null;
+  return { x: ((v.x + 1) / 2) * l, y: ((1 - v.y) / 2) * h };
+}
+
+const VERT = "#4cf08a";
+const HALO = "rgba(4, 20, 10, 0.6)";
+
+function pastille(g: CanvasRenderingContext2D, texte: string, p: P2, k: number) {
+  g.save();
+  g.font = `700 ${11.5 * k}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  const l = g.measureText(texte).width + 14 * k;
+  const h = 18 * k;
+  const x = p.x - l / 2;
+  const y = p.y - h / 2;
+  g.shadowColor = "rgba(0, 0, 0, 0.45)";
+  g.shadowBlur = 4 * k;
+  g.shadowOffsetY = 1 * k;
+  g.beginPath();
+  g.roundRect(x, y, l, h, h / 2);
+  g.fillStyle = VERT;
+  g.fill();
+  g.shadowColor = "transparent";
+  g.lineWidth = 1 * k;
+  g.strokeStyle = "rgba(6, 36, 15, 0.55)";
+  g.stroke();
+  g.fillStyle = "#052611";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(texte, p.x, p.y + 0.5 * k);
+  g.restore();
+}
+
+function flecheImage(g: CanvasRenderingContext2D, p: P2, dx: number, dy: number, long: number) {
+  const larg = long * 0.42;
+  const bx = p.x - dx * long;
+  const by = p.y - dy * long;
+  g.beginPath();
+  g.moveTo(p.x, p.y);
+  g.lineTo(bx - dy * larg, by + dx * larg);
+  g.lineTo(bx + dy * larg, by - dx * larg);
+  g.closePath();
+  g.fill();
+  g.stroke();
+}
+
+/**
+ * Dessine les cotes affichées dans une image de la vue (capture, remarque) : mêmes traits,
+ * flèches et étiquettes qu'à l'écran. k : échelle des traits (1 = taille écran).
+ */
+export function dessinerCotes(g: CanvasRenderingContext2D, l: number, h: number, k = 1) {
+  if (!mesures.length) return;
+  g.save();
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  for (const m of mesures) {
+    if (m.type === "distance") {
+      const p1 = versImage(m.f1, l, h);
+      const p2 = versImage(m.f2, l, h);
+      if (!p1 || !p2) continue;
+      const pa = versImage(m.a, l, h);
+      const longueur = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
+      const dx = (p2.x - p1.x) / longueur;
+      const dy = (p2.y - p1.y) / longueur;
+      const tete = Math.min(13 * k, longueur / 3);
+      if (m.axe !== "libre" && pa && Math.hypot(pa.x - p1.x, pa.y - p1.y) > 2 * k) {
+        g.save();
+        g.setLineDash([4 * k, 3 * k]);
+        g.globalAlpha = 0.85;
+        g.strokeStyle = VERT;
+        g.lineWidth = 1.2 * k;
+        g.beginPath();
+        g.moveTo(pa.x, pa.y);
+        g.lineTo(p1.x, p1.y);
+        g.stroke();
+        g.restore();
+      }
+      const x1 = p1.x + dx * tete * 0.6;
+      const y1 = p1.y + dy * tete * 0.6;
+      const x2 = p2.x - dx * tete * 0.6;
+      const y2 = p2.y - dy * tete * 0.6;
+      for (const [couleur, largeur] of [
+        [HALO, 5],
+        [VERT, 2.2],
+      ] as const) {
+        g.strokeStyle = couleur;
+        g.lineWidth = largeur * k;
+        g.beginPath();
+        g.moveTo(x1, y1);
+        g.lineTo(x2, y2);
+        g.stroke();
+      }
+      g.fillStyle = VERT;
+      g.strokeStyle = HALO;
+      g.lineWidth = 1 * k;
+      flecheImage(g, p1, -dx, -dy, tete);
+      flecheImage(g, p2, dx, dy, tete);
+      pastille(g, texteDistance(m), { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }, k);
+    } else {
+      const pts = m.points.map((p) => versImage(p, l, h));
+      if (pts.some((p) => !p) || pts.length < 3) continue;
+      const ps = pts as P2[];
+      g.beginPath();
+      ps.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
+      g.closePath();
+      g.fillStyle = "rgba(76, 240, 138, 0.2)";
+      g.fill();
+      g.strokeStyle = VERT;
+      g.lineWidth = 2 * k;
+      g.stroke();
+      for (const p of ps) {
+        g.beginPath();
+        g.arc(p.x, p.y, 3.2 * k, 0, Math.PI * 2);
+        g.fillStyle = VERT;
+        g.fill();
+        g.lineWidth = 1 * k;
+        g.strokeStyle = "rgba(4, 20, 10, 0.7)";
+        g.stroke();
+      }
+      const c = ps.reduce((s, p) => ({ x: s.x + p.x / ps.length, y: s.y + p.y / ps.length }), { x: 0, y: 0 });
+      pastille(g, texteSurface(m.aire), c, k);
+    }
+  }
+  g.restore();
+}
+
 // --- Panneau ---------------------------------------------------------------------------
 
 function supprimer(m: Mesure) {
@@ -483,7 +661,10 @@ function supprimer(m: Mesure) {
 }
 
 function dessinerListe() {
-  liste.replaceChildren();
+  marquerOutil("mesure", mesures.length ? String(mesures.length) : false);
+  const l = liste;
+  if (!l) return;
+  l.replaceChildren();
   mesures.forEach((m, i) => {
     const rang = cree("div", "resultat");
     const txt = cree("div", "resultat-texte");
@@ -503,9 +684,8 @@ function dessinerListe() {
       );
     }
     rang.append(txt, boutonIcone("retirer", () => supprimer(m), "Supprimer cette mesure"));
-    liste.append(rang);
+    l.append(rang);
   });
-  marquerOutil("mesure", mesures.length ? String(mesures.length) : false);
 }
 
 function majActions() {
@@ -561,10 +741,12 @@ enregistrerOutil("mesure", "Mesure", "Mesurer", (section) => {
       for (const m of [...mesures]) supprimer(m);
     }),
   );
+  dessinerListe();
   return {
     ouvrir: () => {
       actif = true;
       definirModeClic(toucher);
+      dessinerListe();
     },
     fermer: () => {
       actif = false;

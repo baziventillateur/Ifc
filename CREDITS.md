@@ -10,6 +10,7 @@ l'usage commercial ; les textes complets sont dans le dossier `licences/`.
 | [three.js](https://github.com/mrdoob/three.js) | Moteur 3D | MIT |
 | [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) | Contrôle précis des clashs (arbres de volumes) | MIT |
 | [JSZip](https://github.com/Stuk/jszip) | Lecture et écriture des fichiers BCF | MIT (au choix avec GPLv3 ; utilisé ici sous MIT) |
+| [Filerobot Image Editor](https://github.com/scaleflex/filerobot-image-editor) (Scaleflex), avec React, Konva et styled-components | Éditeur d'annotation des captures et des remarques (chargé à la demande) | MIT |
 
 ## Maquette d'exemple
 

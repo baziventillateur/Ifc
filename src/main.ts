@@ -1,6 +1,7 @@
 // Point d'entrée : commandes de la barre du haut, outils, démarrage.
 import { el, fragments, lanceur, monde } from "./noyau";
 import { maquettes } from "./registre";
+import "./theme";
 import { recadrer } from "./maquettes";
 import { attendreSession } from "./nuage/compte";
 import { demanderDepot, demarrerNuage, deposer } from "./nuage/projets";

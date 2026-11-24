@@ -32,6 +32,8 @@
       addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault() }, { passive: false });
       addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && ['+','-','=','0','_'].includes(e.key)) e.preventDefault() });
       if('serviceWorker' in navigator) addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+      // Thème choisi (clair ou sombre), posé avant l'affichage pour éviter un éclair de l'autre thème.
+      try { if (localStorage.getItem('nexbim-theme') === 'clair') { document.documentElement.dataset.theme = 'clair'; document.querySelector('meta[name=theme-color]')?.setAttribute('content', '#ffffff'); } } catch (x) {}
       // Installation de l'appli : le navigateur la propose tôt, on garde sa demande pour notre bouton « Installer ».
       window.__installation = null;
       addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__installation = e; dispatchEvent(new Event('nexbim-installable')); });
